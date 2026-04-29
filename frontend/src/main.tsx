@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CalendarDays, Check, LogIn, LogOut, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, LogIn, LogOut, ShieldCheck, Trash2 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
   GoogleAuthProvider,
@@ -35,6 +35,8 @@ const PERIODS: Array<{ id: Period; label: string }> = [
   { id: 'afternoon', label: '午後' },
   { id: 'night', label: '夜' }
 ];
+const MIN_MONTH_OFFSET = -6;
+const MAX_MONTH_OFFSET = 6;
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -318,12 +320,22 @@ function App() {
       <section className="workspace">
         <div className="calendar-area">
           <div className="calendar-header">
-            <button className="icon-button" disabled={monthOffset <= 0} onClick={() => setMonthOffset((v) => v - 1)}>
-              <RotateCcw size={18} />
+            <button
+              className="secondary-button"
+              disabled={monthOffset <= MIN_MONTH_OFFSET}
+              onClick={() => setMonthOffset((v) => v - 1)}
+            >
+              <ChevronLeft size={18} />
+              前月
             </button>
             <h2>{currentMonth.getFullYear()}年 {currentMonth.getMonth() + 1}月</h2>
-            <button className="secondary-button" disabled={monthOffset >= 6} onClick={() => setMonthOffset((v) => v + 1)}>
+            <button
+              className="secondary-button"
+              disabled={monthOffset >= MAX_MONTH_OFFSET}
+              onClick={() => setMonthOffset((v) => v + 1)}
+            >
               次月
+              <ChevronRight size={18} />
             </button>
           </div>
 
