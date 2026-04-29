@@ -5,7 +5,7 @@
 ## 構成
 
 - `frontend`: Vite + React。Firebase Authentication の Google ログインと予約カレンダー。
-- `backend`: Express + Firebase Admin。Firestore への予約登録、承認、取消。
+- `backend`: Express + Google Cloud Firestore SDK。Firestore への予約登録、承認、取消。
 
 ## セットアップ
 
@@ -16,6 +16,18 @@ cp backend/.env.example backend/.env
 ```
 
 Firebase プロジェクトを作成し、Firestore と Google 認証を有効化してください。
+
+ローカルで backend から Firestore にアクセスするには、Google Application Default Credentials が必要です。どちらかを設定してください。
+
+```sh
+gcloud auth application-default login
+```
+
+または、Firebase/GCP のサービスアカウントキーを使う場合は `backend/.env` に絶対パスを指定します。
+
+```env
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
+```
 
 ## 開発起動
 
@@ -45,4 +57,5 @@ docker compose up --build
 
 ## 管理者
 
-`backend/.env` の `ADMIN_EMAILS` にカンマ区切りで管理者の Google アカウント email を指定します。
+`backend/.env` の `FIREBASE_PROJECT_ID` には `frontend/.env.local` の `VITE_FIREBASE_PROJECT_ID` と同じ値を指定してください。
+`ADMIN_EMAILS` にはカンマ区切りで管理者の Google アカウント email を指定します。

@@ -16,7 +16,7 @@ const MAX_SLOTS_PER_REQUEST = 50;
 const env = {
   port: Number(process.env.PORT || 8080),
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
-  projectId: process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
+  projectId: process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
   databaseId: process.env.FIRESTORE_DATABASE_ID || '(default)',
   adminEmails: new Set(
     (process.env.ADMIN_EMAILS || '')
@@ -27,10 +27,14 @@ const env = {
 };
 
 if (!env.projectId) {
-  throw new Error('GOOGLE_CLOUD_PROJECT is required.');
+  throw new Error('FIREBASE_PROJECT_ID or GOOGLE_CLOUD_PROJECT is required.');
 }
 
-const db = new Firestore(env.databaseId === '(default)' ? {} : { databaseId: env.databaseId });
+const db = new Firestore(
+  env.databaseId === '(default)'
+    ? { projectId: env.projectId }
+    : { projectId: env.projectId, databaseId: env.databaseId }
+);
 const firebaseJwks = createRemoteJWKSet(
   new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com')
 );
@@ -39,6 +43,10 @@ const app = express();
 app.use(helmet());
 app.use(cors({ origin: env.frontendOrigin, credentials: true }));
 app.use(express.json({ limit: '256kb' }));
+
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled promise rejection:', error);
+});
 
 const slotSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -124,7 +132,8 @@ async function authenticate(req, res, next) {
       isAdmin: env.adminEmails.has(String(payload.email || '').toLowerCase())
     };
     next();
-  } catch {
+  } catch (error) {
+    console.warn('Firebase ID token verification failed:', error instanceof Error ? error.message : error);
     res.status(401).json({ error: '認証トークンが無効です。' });
   }
 }

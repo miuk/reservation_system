@@ -36,15 +36,40 @@ const PERIODS: Array<{ id: Period; label: string }> = [
   { id: 'night', label: '夜' }
 ];
 
-const firebaseApp = initializeApp({
+const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID
-});
+};
+const missingFirebaseConfig = Object.entries(firebaseConfig)
+  .filter(([, value]) => !value)
+  .map(([key]) => key);
 
+const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+
+function authErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) return 'Googleログインに失敗しました。';
+  const message = error.message;
+  if (message.includes('auth/unauthorized-domain')) {
+    return 'Firebase Authentication の承認済みドメインに localhost が登録されていません。Firebase Console で Authentication > Settings > Authorized domains に localhost を追加してください。';
+  }
+  if (message.includes('auth/operation-not-allowed')) {
+    return 'Firebase Authentication で Google ログインが有効になっていません。Sign-in method で Google を有効化してください。';
+  }
+  if (message.includes('auth/configuration-not-found')) {
+    return 'Firebase Authentication の設定が見つかりません。Firebase Console でこのプロジェクトの Authentication を開始し、Sign-in method で Google を有効化してください。API key、authDomain、projectId が同じ Firebase プロジェクトの値かも確認してください。';
+  }
+  if (message.includes('auth/invalid-api-key') || missingFirebaseConfig.length > 0) {
+    return `Firebase のフロントエンド設定が不足しています: ${missingFirebaseConfig.join(', ')}`;
+  }
+  if (message.includes('auth/popup-closed-by-user')) {
+    return 'Googleログインのポップアップが閉じられました。';
+  }
+  return message;
+}
 
 function isoDate(date: Date) {
   const copy = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -163,7 +188,16 @@ function App() {
   }, [firebaseUser, monthOffset]);
 
   async function login() {
-    await signInWithPopup(auth, new GoogleAuthProvider());
+    setMessage('');
+    if (missingFirebaseConfig.length > 0) {
+      setMessage(`Firebase のフロントエンド設定が不足しています: ${missingFirebaseConfig.join(', ')}`);
+      return;
+    }
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch (error) {
+      setMessage(authErrorMessage(error));
+    }
   }
 
   async function logout() {
@@ -256,6 +290,7 @@ function App() {
         <section className="login-panel">
           <CalendarDays size={44} aria-hidden />
           <h1>会議室予約</h1>
+          {message && <div className="notice">{message}</div>}
           <button className="primary-button" onClick={login}>
             <LogIn size={18} />
             Googleでログイン
