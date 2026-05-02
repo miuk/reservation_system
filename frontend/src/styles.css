@@ -537,12 +537,29 @@ textarea {
   .day-cell {
     min-height: 112px;
     break-inside: avoid;
+    background: #ffffff;
+    border-color: #111111;
   }
 
   .slot-button {
     min-height: 32px;
     padding: 4px;
-    border-color: #999;
-    color: #111;
+    border-color: #111111;
+    background: #ffffff !important;
+    color: #111111 !important;
+    opacity: 1 !important;
+    align-items: center;
+    justify-items: center;
+    text-align: center;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .slot-button.pending,
+  .slot-button.approved,
+  .slot-button.selected {
+    background: #ffffff !important;
+    color: #111111 !important;
+    border-color: #111111 !important;
   }
 }

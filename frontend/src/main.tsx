@@ -433,7 +433,9 @@ function App() {
                         disabled={!selectable || outOfRange || Boolean(occupied)}
                         onClick={() => toggleSlot(slot)}
                       >
-                        {occupied ? (
+                        {printMode ? (
+                          <span>{occupied?.groupName || '-'}</span>
+                        ) : occupied ? (
                           <>
                             <strong>{occupied.groupName || '予約あり'}</strong>
                             <small>{statusLabel(occupied.status)}</small>
