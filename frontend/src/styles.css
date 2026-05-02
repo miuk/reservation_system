@@ -340,8 +340,15 @@ textarea {
 }
 
 .admin-actions {
-  justify-content: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-content: stretch;
   margin-top: 12px;
+}
+
+.admin-cancel-cell {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .selected-slots {

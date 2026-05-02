@@ -247,10 +247,11 @@ app.get('/api/availability', authenticate, async (req, res, next) => {
 
 app.get('/api/reservations', authenticate, async (req, res, next) => {
   try {
-    let query = db.collection('reservations').orderBy('createdAt', 'desc').limit(200);
-    if (!req.user.isAdmin) {
-      query = db.collection('reservations').where('createdBy.uid', '==', req.user.uid).limit(200);
-    }
+    const scope = typeof req.query.scope === 'string' ? req.query.scope : 'mine';
+    const query =
+      scope === 'all' && req.user.isAdmin
+        ? db.collection('reservations').orderBy('createdAt', 'desc').limit(200)
+        : db.collection('reservations').where('createdBy.uid', '==', req.user.uid).limit(200);
     const snapshot = await query.get();
     res.json({ reservations: snapshot.docs.map(serializeReservation) });
   } catch (error) {

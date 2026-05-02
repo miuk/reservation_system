@@ -197,9 +197,10 @@ function App() {
     const start = isoDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1));
     const end = isoDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0));
     const me = await api<{ user: ApiUser }>('/api/me');
+    const reservationScope = path.startsWith('/admin') && me.user.isAdmin ? 'all' : 'mine';
     const [availability, reservationList] = await Promise.all([
       api<{ slots: OccupiedSlot[] }>(`/api/availability?start=${start}&end=${end}`),
-      api<{ reservations: Reservation[] }>('/api/reservations')
+      api<{ reservations: Reservation[] }>(`/api/reservations?scope=${reservationScope}`)
     ]);
     setApiUser(me.user);
     setOccupiedSlots(availability.slots);
@@ -226,7 +227,7 @@ function App() {
   useEffect(() => {
     if (!firebaseUser) return;
     refresh().catch((error) => setMessage(error.message));
-  }, [firebaseUser, monthOffset]);
+  }, [firebaseUser, monthOffset, path]);
 
   useEffect(() => {
     if (firebaseUser?.email && !form.representativeEmail) {
@@ -432,9 +433,14 @@ function App() {
                         disabled={!selectable || outOfRange || Boolean(occupied)}
                         onClick={() => toggleSlot(slot)}
                       >
-                        <span>{period.label}</span>
-                        {occupied?.groupName && <strong>{occupied.groupName}</strong>}
-                        {occupied && <small>{statusLabel(occupied.status)}</small>}
+                        {occupied ? (
+                          <>
+                            <strong>{occupied.groupName || '予約あり'}</strong>
+                            <small>{statusLabel(occupied.status)}</small>
+                          </>
+                        ) : (
+                          <span>{period.label}</span>
+                        )}
                       </button>
                     );
                   })}
@@ -457,20 +463,27 @@ function App() {
               <span className={`status ${reservation.status}`}>{statusLabel(reservation.status)}</span>
             </div>
             <p>{reservation.slots.map(slotLabel).join('、')}</p>
-            <p>{reservation.representative.name} / {reservation.representative.phone} / {reservation.expectedAttendees}名</p>
+            <p>{reservation.representative.name} / {reservation.representative.phone} / {reservation.representative.email} / {reservation.expectedAttendees}名</p>
+            {reservation.secondaryRepresentative?.email && (
+              <p>{reservation.secondaryRepresentative.name || '代表者2'} / {reservation.secondaryRepresentative.phone || '-'} / {reservation.secondaryRepresentative.email}</p>
+            )}
             <p>{reservation.purpose}</p>
             {admin && reservation.status !== 'cancelled' && (
               <div className="admin-actions">
-                {reservation.status === 'pending' && (
-                  <button className="secondary-button" disabled={loading} onClick={() => adminAction(reservation.id, 'approve')}>
-                    <ShieldCheck size={16} />
-                    承認
+                <div>
+                  {reservation.status === 'pending' && (
+                    <button className="secondary-button" disabled={loading} onClick={() => adminAction(reservation.id, 'approve')}>
+                      <ShieldCheck size={16} />
+                      承認
+                    </button>
+                  )}
+                </div>
+                <div className="admin-cancel-cell">
+                  <button className="danger-button" disabled={loading} onClick={() => adminAction(reservation.id, 'cancel')}>
+                    <Trash2 size={16} />
+                    取消
                   </button>
-                )}
-                <button className="danger-button" disabled={loading} onClick={() => adminAction(reservation.id, 'cancel')}>
-                  <Trash2 size={16} />
-                  取消
-                </button>
+                </div>
               </div>
             )}
           </article>
