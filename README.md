@@ -52,10 +52,12 @@ docker compose up --build
 
 - `reservations/{reservationId}`: 申込単位
 - `reservationSlots/{yyyy-mm-dd_period}`: コマ単位の占有レコード
+- `allowedUsers/{email}`: ログイン可能な利用者と管理者
 
 `reservationSlots` をトランザクション内で先に確認・作成するため、同時申込でも重複予約を防ぎます。
 
 ## 管理者
 
 `backend/.env` の `FIREBASE_PROJECT_ID` には `frontend/.env.local` の `VITE_FIREBASE_PROJECT_ID` と同じ値を指定してください。
-`ADMIN_EMAILS` にはカンマ区切りで管理者の Google アカウント email を指定します。
+`ADMIN_EMAILS` にはカンマ区切りで初期管理者の Google アカウント email を指定します。
+初期管理者は `allowedUsers` 未登録でもログインでき、管理者画面から利用者を追加できます。

@@ -1,6 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, LogIn, LogOut, ShieldCheck, Trash2 } from 'lucide-react';
+import {
+  CalendarDays,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  LogIn,
+  LogOut,
+  Printer,
+  ShieldCheck,
+  Trash2,
+  UserPlus,
+  X
+} from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import {
   GoogleAuthProvider,
@@ -14,9 +26,14 @@ import './styles.css';
 
 type Period = 'morning' | 'afternoon' | 'night';
 type Slot = { date: string; period: Period };
-type OccupiedSlot = Slot & { id: string; reservationId: string; status: ReservationStatus };
 type ReservationStatus = 'pending' | 'approved' | 'cancelled';
-type ApiUser = { uid: string; email: string; name: string; isAdmin: boolean };
+type OccupiedSlot = Slot & {
+  id: string;
+  reservationId: string;
+  status: ReservationStatus;
+  groupName?: string;
+};
+type ApiUser = { uid: string; email: string; name: string; role: 'user' | 'admin'; isAdmin: boolean };
 type Reservation = {
   id: string;
   slots: Slot[];
@@ -29,6 +46,14 @@ type Reservation = {
   notes?: string;
   createdAt: string | null;
 };
+type AllowedUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: 'user' | 'admin';
+  active: boolean;
+};
+type AdminTab = 'reservations' | 'users' | 'print';
 
 const PERIODS: Array<{ id: Period; label: string }> = [
   { id: 'morning', label: '午前' },
@@ -104,15 +129,23 @@ function statusLabel(status: ReservationStatus) {
   return { pending: '仮予約', approved: '予約確定', cancelled: '取消済み' }[status];
 }
 
+function slotLabel(slot: Slot) {
+  return `${slot.date} ${PERIODS.find((period) => period.id === slot.period)?.label || slot.period}`;
+}
+
 function App() {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [apiUser, setApiUser] = useState<ApiUser | null>(null);
   const [occupiedSlots, setOccupiedSlots] = useState<OccupiedSlot[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>([]);
   const [selectedSlots, setSelectedSlots] = useState<Slot[]>([]);
   const [monthOffset, setMonthOffset] = useState(0);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [adminTab, setAdminTab] = useState<AdminTab>('reservations');
+  const [path, setPath] = useState(window.location.pathname);
+  const [userForm, setUserForm] = useState({ email: '', name: '', role: 'user' as 'user' | 'admin' });
   const [form, setForm] = useState({
     groupName: '',
     representativeName: '',
@@ -137,6 +170,7 @@ function App() {
     () => new Set(selectedSlots.map((slot) => slotKey(slot))),
     [selectedSlots]
   );
+  const isAdminPath = path.startsWith('/admin');
 
   async function token() {
     if (!auth.currentUser) throw new Error('ログインが必要です。');
@@ -162,14 +196,18 @@ function App() {
     if (!auth.currentUser) return;
     const start = isoDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1));
     const end = isoDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0));
-    const [me, availability, reservationList] = await Promise.all([
-      api<{ user: ApiUser }>('/api/me'),
+    const me = await api<{ user: ApiUser }>('/api/me');
+    const [availability, reservationList] = await Promise.all([
       api<{ slots: OccupiedSlot[] }>(`/api/availability?start=${start}&end=${end}`),
       api<{ reservations: Reservation[] }>('/api/reservations')
     ]);
     setApiUser(me.user);
     setOccupiedSlots(availability.slots);
     setReservations(reservationList.reservations);
+    if (me.user.isAdmin) {
+      const userList = await api<{ users: AllowedUser[] }>('/api/admin/users');
+      setAllowedUsers(userList.users);
+    }
   }
 
   useEffect(() => {
@@ -179,6 +217,7 @@ function App() {
         setApiUser(null);
         setOccupiedSlots([]);
         setReservations([]);
+        setAllowedUsers([]);
         setSelectedSlots([]);
       }
     });
@@ -188,6 +227,12 @@ function App() {
     if (!firebaseUser) return;
     refresh().catch((error) => setMessage(error.message));
   }, [firebaseUser, monthOffset]);
+
+  useEffect(() => {
+    if (firebaseUser?.email && !form.representativeEmail) {
+      setForm((current) => ({ ...current, representativeEmail: firebaseUser.email || '' }));
+    }
+  }, [firebaseUser]);
 
   async function login() {
     setMessage('');
@@ -205,6 +250,17 @@ function App() {
   async function logout() {
     await signOut(auth);
   }
+
+  function go(path: string) {
+    window.history.pushState({}, '', path);
+    setPath(path);
+  }
+
+  useEffect(() => {
+    const updatePath = () => setPath(window.location.pathname);
+    window.addEventListener('popstate', updatePath);
+    return () => window.removeEventListener('popstate', updatePath);
+  }, []);
 
   function toggleSlot(slot: Slot) {
     const key = slotKey(slot);
@@ -280,11 +336,148 @@ function App() {
     }
   }
 
-  useEffect(() => {
-    if (firebaseUser?.email && !form.representativeEmail) {
-      setForm((current) => ({ ...current, representativeEmail: firebaseUser.email || '' }));
+  async function addUser(event: React.FormEvent) {
+    event.preventDefault();
+    setLoading(true);
+    setMessage('');
+    try {
+      await api('/api/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({ ...userForm, active: true })
+      });
+      setUserForm({ email: '', name: '', role: 'user' });
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '利用者の登録に失敗しました。');
+    } finally {
+      setLoading(false);
     }
-  }, [firebaseUser]);
+  }
+
+  async function updateUser(user: AllowedUser, patch: Partial<AllowedUser>) {
+    setLoading(true);
+    setMessage('');
+    try {
+      await api(`/api/admin/users/${encodeURIComponent(user.email)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch)
+      });
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '利用者の更新に失敗しました。');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deactivateUser(user: AllowedUser) {
+    setLoading(true);
+    setMessage('');
+    try {
+      await api(`/api/admin/users/${encodeURIComponent(user.email)}`, { method: 'DELETE' });
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '利用者の無効化に失敗しました。');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function Calendar({ selectable, printMode = false }: { selectable: boolean; printMode?: boolean }) {
+    return (
+      <div className={printMode ? 'print-calendar' : 'calendar-area'}>
+        <div className="calendar-header no-print">
+          <button
+            className="secondary-button"
+            disabled={monthOffset <= MIN_MONTH_OFFSET}
+            onClick={() => setMonthOffset((v) => v - 1)}
+          >
+            <ChevronLeft size={18} />
+            前月
+          </button>
+          <h2>{currentMonth.getFullYear()}年 {currentMonth.getMonth() + 1}月</h2>
+          <button
+            className="secondary-button"
+            disabled={monthOffset >= MAX_MONTH_OFFSET}
+            onClick={() => setMonthOffset((v) => v + 1)}
+          >
+            次月
+            <ChevronRight size={18} />
+          </button>
+        </div>
+        {printMode && <h2 className="print-title">{currentMonth.getFullYear()}年 {currentMonth.getMonth() + 1}月 会議室予約</h2>}
+        <div className="weekday-row">
+          {['日', '月', '火', '水', '木', '金', '土'].map((day) => (
+            <span key={day}>{day}</span>
+          ))}
+        </div>
+        <div className="calendar-grid">
+          {monthDays(currentMonth).map((date, index) => {
+            if (!date) return <div className="day-cell empty" key={`empty-${index}`} />;
+            const dateString = isoDate(date);
+            const outOfRange = dateString < minDate || dateString > maxDate;
+            return (
+              <div className="day-cell" key={dateString}>
+                <div className="day-number">{date.getDate()}</div>
+                <div className="period-list">
+                  {PERIODS.map((period) => {
+                    const slot = { date: dateString, period: period.id };
+                    const key = slotKey(slot);
+                    const occupied = occupiedByKey.get(key);
+                    const selected = selectedByKey.has(key);
+                    return (
+                      <button
+                        key={key}
+                        className={`slot-button ${selected ? 'selected' : ''} ${occupied ? occupied.status : ''}`}
+                        disabled={!selectable || outOfRange || Boolean(occupied)}
+                        onClick={() => toggleSlot(slot)}
+                      >
+                        <span>{period.label}</span>
+                        {occupied?.groupName && <strong>{occupied.groupName}</strong>}
+                        {occupied && <small>{statusLabel(occupied.status)}</small>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function ReservationList({ admin }: { admin: boolean }) {
+    return (
+      <div className="reservation-list">
+        {reservations.map((reservation) => (
+          <article className="reservation-card" key={reservation.id}>
+            <div>
+              <strong>{reservation.groupName}</strong>
+              <span className={`status ${reservation.status}`}>{statusLabel(reservation.status)}</span>
+            </div>
+            <p>{reservation.slots.map(slotLabel).join('、')}</p>
+            <p>{reservation.representative.name} / {reservation.representative.phone} / {reservation.expectedAttendees}名</p>
+            <p>{reservation.purpose}</p>
+            {admin && reservation.status !== 'cancelled' && (
+              <div className="admin-actions">
+                {reservation.status === 'pending' && (
+                  <button className="secondary-button" disabled={loading} onClick={() => adminAction(reservation.id, 'approve')}>
+                    <ShieldCheck size={16} />
+                    承認
+                  </button>
+                )}
+                <button className="danger-button" disabled={loading} onClick={() => adminAction(reservation.id, 'cancel')}>
+                  <Trash2 size={16} />
+                  取消
+                </button>
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    );
+  }
 
   if (!firebaseUser) {
     return (
@@ -304,133 +497,146 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
+      <header className="topbar no-print">
         <div>
-          <h1>会議室予約</h1>
+          <h1>{isAdminPath ? '管理者画面' : '会議室予約'}</h1>
           <p>{firebaseUser.email}</p>
         </div>
-        <button className="ghost-button" onClick={logout}>
-          <LogOut size={18} />
-          ログアウト
-        </button>
+        <nav className="top-actions">
+          <button className="ghost-button" onClick={() => go('/reservations')}>予約画面</button>
+          {apiUser?.isAdmin && <button className="ghost-button" onClick={() => go('/admin')}>管理者画面</button>}
+          <button className="ghost-button" onClick={logout}>
+            <LogOut size={18} />
+            ログアウト
+          </button>
+        </nav>
       </header>
 
-      {message && <div className="notice">{message}</div>}
+      {message && <div className="notice no-print">{message}</div>}
 
-      <section className="workspace">
-        <div className="calendar-area">
-          <div className="calendar-header">
-            <button
-              className="secondary-button"
-              disabled={monthOffset <= MIN_MONTH_OFFSET}
-              onClick={() => setMonthOffset((v) => v - 1)}
-            >
-              <ChevronLeft size={18} />
-              前月
-            </button>
-            <h2>{currentMonth.getFullYear()}年 {currentMonth.getMonth() + 1}月</h2>
-            <button
-              className="secondary-button"
-              disabled={monthOffset >= MAX_MONTH_OFFSET}
-              onClick={() => setMonthOffset((v) => v + 1)}
-            >
-              次月
-              <ChevronRight size={18} />
-            </button>
-          </div>
-
-          <div className="weekday-row">
-            {['日', '月', '火', '水', '木', '金', '土'].map((day) => (
-              <span key={day}>{day}</span>
-            ))}
-          </div>
-          <div className="calendar-grid">
-            {monthDays(currentMonth).map((date, index) => {
-              if (!date) return <div className="day-cell empty" key={`empty-${index}`} />;
-              const dateString = isoDate(date);
-              const outOfRange = dateString < minDate || dateString > maxDate;
-              return (
-                <div className="day-cell" key={dateString}>
-                  <div className="day-number">{date.getDate()}</div>
-                  <div className="period-list">
-                    {PERIODS.map((period) => {
-                      const slot = { date: dateString, period: period.id };
-                      const key = slotKey(slot);
-                      const occupied = occupiedByKey.get(key);
-                      const selected = selectedByKey.has(key);
-                      return (
-                        <button
-                          key={key}
-                          className={`slot-button ${selected ? 'selected' : ''} ${occupied ? occupied.status : ''}`}
-                          disabled={outOfRange || Boolean(occupied)}
-                          onClick={() => toggleSlot(slot)}
-                        >
-                          {period.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <aside className="side-panel">
-          <h2>申込内容</h2>
-          <div className="selection-summary">
-            <strong>{selectedSlots.length}</strong>
-            <span>/ 50 コマ選択中</span>
-          </div>
-          <form className="reservation-form" onSubmit={submitReservation}>
-            <input required placeholder="団体名" value={form.groupName} onChange={(e) => setForm({ ...form, groupName: e.target.value })} />
-            <input required placeholder="代表者名" value={form.representativeName} onChange={(e) => setForm({ ...form, representativeName: e.target.value })} />
-            <input required placeholder="代表者 電話番号" value={form.representativePhone} onChange={(e) => setForm({ ...form, representativePhone: e.target.value })} />
-            <input required type="email" placeholder="代表者 email" value={form.representativeEmail} onChange={(e) => setForm({ ...form, representativeEmail: e.target.value })} />
-            <input placeholder="代表者名2" value={form.secondaryName} onChange={(e) => setForm({ ...form, secondaryName: e.target.value })} />
-            <input placeholder="代表者2 電話番号" value={form.secondaryPhone} onChange={(e) => setForm({ ...form, secondaryPhone: e.target.value })} />
-            <input type="email" placeholder="代表者2 email" value={form.secondaryEmail} onChange={(e) => setForm({ ...form, secondaryEmail: e.target.value })} />
-            <input required type="number" min="1" placeholder="利用予定人数" value={form.expectedAttendees} onChange={(e) => setForm({ ...form, expectedAttendees: e.target.value })} />
-            <textarea required placeholder="利用目的" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
-            <textarea placeholder="その他連絡事項" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-            <button className="primary-button" disabled={loading || selectedSlots.length === 0}>
-              <Check size={18} />
-              仮予約を申し込む
-            </button>
-          </form>
-        </aside>
-      </section>
-
-      <section className="reservations-section">
-        <h2>{apiUser?.isAdmin ? '予約管理' : '自分の申込'}</h2>
-        <div className="reservation-list">
-          {reservations.map((reservation) => (
-            <article className="reservation-card" key={reservation.id}>
-              <div>
-                <strong>{reservation.groupName}</strong>
-                <span className={`status ${reservation.status}`}>{statusLabel(reservation.status)}</span>
+      {!apiUser && message ? (
+        <section className="reservations-section">
+          <h2>利用できません</h2>
+        </section>
+      ) : isAdminPath ? (
+        <section className="admin-shell">
+          {!apiUser?.isAdmin ? (
+            <section className="reservations-section">
+              <h2>管理者権限が必要です</h2>
+            </section>
+          ) : (
+            <>
+              <div className="tabs no-print">
+                <button className={adminTab === 'reservations' ? 'active' : ''} onClick={() => setAdminTab('reservations')}>予約管理</button>
+                <button className={adminTab === 'users' ? 'active' : ''} onClick={() => setAdminTab('users')}>利用者管理</button>
+                <button className={adminTab === 'print' ? 'active' : ''} onClick={() => setAdminTab('print')}>印刷</button>
               </div>
-              <p>{reservation.slots.map((slot) => `${slot.date} ${PERIODS.find((p) => p.id === slot.period)?.label}`).join('、')}</p>
-              <p>{reservation.representative.name} / {reservation.representative.phone} / {reservation.expectedAttendees}名</p>
-              <p>{reservation.purpose}</p>
-              {apiUser?.isAdmin && reservation.status !== 'cancelled' && (
-                <div className="admin-actions">
-                  {reservation.status === 'pending' && (
-                    <button className="secondary-button" onClick={() => adminAction(reservation.id, 'approve')}>
-                      <ShieldCheck size={16} />
-                      承認
-                    </button>
-                  )}
-                  <button className="danger-button" onClick={() => adminAction(reservation.id, 'cancel')}>
-                    <Trash2 size={16} />
-                    取消
-                  </button>
-                </div>
+
+              {adminTab === 'reservations' && (
+                <section className="reservations-section">
+                  <h2>予約管理</h2>
+                  <ReservationList admin />
+                </section>
               )}
-            </article>
-          ))}
-        </div>
-      </section>
+
+              {adminTab === 'users' && (
+                <section className="reservations-section">
+                  <h2>利用者管理</h2>
+                  <form className="user-form" onSubmit={addUser}>
+                    <input required type="email" placeholder="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} />
+                    <input required placeholder="名前" value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} />
+                    <select value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value as 'user' | 'admin' })}>
+                      <option value="user">利用者</option>
+                      <option value="admin">管理者</option>
+                    </select>
+                    <button className="primary-button" disabled={loading}>
+                      <UserPlus size={18} />
+                      追加
+                    </button>
+                  </form>
+                  <div className="user-list">
+                    {allowedUsers.map((user) => (
+                      <article className="user-row" key={user.email}>
+                        <div>
+                          <strong>{user.name}</strong>
+                          <span>{user.email}</span>
+                        </div>
+                        <select value={user.role} disabled={loading} onChange={(e) => updateUser(user, { role: e.target.value as 'user' | 'admin' })}>
+                          <option value="user">利用者</option>
+                          <option value="admin">管理者</option>
+                        </select>
+                        <label className="toggle-label">
+                          <input type="checkbox" checked={user.active} disabled={loading} onChange={(e) => updateUser(user, { active: e.target.checked })} />
+                          有効
+                        </label>
+                        <button className="danger-button" disabled={loading || !user.active} onClick={() => deactivateUser(user)}>
+                          <Trash2 size={16} />
+                          無効化
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {adminTab === 'print' && (
+                <section className="reservations-section print-section">
+                  <div className="print-actions no-print">
+                    <h2>カレンダー印刷</h2>
+                    <button className="primary-button compact" onClick={() => window.print()}>
+                      <Printer size={18} />
+                      印刷
+                    </button>
+                  </div>
+                  <Calendar selectable={false} printMode />
+                </section>
+              )}
+            </>
+          )}
+        </section>
+      ) : (
+        <>
+          <section className="workspace">
+            <Calendar selectable />
+            <aside className="side-panel">
+              <h2>申込内容</h2>
+              <div className="selection-summary">
+                <strong>{selectedSlots.length}</strong>
+                <span>/ 50 コマ選択中</span>
+              </div>
+              <div className="selected-slots">
+                {selectedSlots.map((slot) => (
+                  <button className="selected-slot-row" key={slotKey(slot)} onClick={() => toggleSlot(slot)}>
+                    <span>{slotLabel(slot)}</span>
+                    <X size={14} />
+                  </button>
+                ))}
+              </div>
+              <form className="reservation-form" onSubmit={submitReservation}>
+                <input required placeholder="団体名" value={form.groupName} onChange={(e) => setForm({ ...form, groupName: e.target.value })} />
+                <input required placeholder="代表者名" value={form.representativeName} onChange={(e) => setForm({ ...form, representativeName: e.target.value })} />
+                <input required placeholder="代表者 電話番号" value={form.representativePhone} onChange={(e) => setForm({ ...form, representativePhone: e.target.value })} />
+                <input required type="email" placeholder="代表者 email" value={form.representativeEmail} onChange={(e) => setForm({ ...form, representativeEmail: e.target.value })} />
+                <input placeholder="代表者名2" value={form.secondaryName} onChange={(e) => setForm({ ...form, secondaryName: e.target.value })} />
+                <input placeholder="代表者2 電話番号" value={form.secondaryPhone} onChange={(e) => setForm({ ...form, secondaryPhone: e.target.value })} />
+                <input type="email" placeholder="代表者2 email" value={form.secondaryEmail} onChange={(e) => setForm({ ...form, secondaryEmail: e.target.value })} />
+                <input required type="number" min="1" placeholder="利用予定人数" value={form.expectedAttendees} onChange={(e) => setForm({ ...form, expectedAttendees: e.target.value })} />
+                <textarea required placeholder="利用目的" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: e.target.value })} />
+                <textarea placeholder="その他連絡事項" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+                <button className="primary-button" disabled={loading || selectedSlots.length === 0}>
+                  <Check size={18} />
+                  仮予約を申し込む
+                </button>
+              </form>
+            </aside>
+          </section>
+
+          <section className="reservations-section">
+            <h2>自分の申込</h2>
+            <ReservationList admin={false} />
+          </section>
+        </>
+      )}
     </main>
   );
 }

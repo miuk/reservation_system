@@ -14,6 +14,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -67,6 +68,15 @@ button:disabled {
 .topbar p {
   margin: 4px 0 0;
   color: #68716d;
+}
+
+.top-actions,
+.tabs,
+.print-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .workspace {
@@ -146,11 +156,37 @@ button:disabled {
 }
 
 .slot-button {
-  min-height: 30px;
+  min-height: 44px;
+  width: 100%;
   border: 1px solid #cfd8d3;
   border-radius: 6px;
   background: #ffffff;
   color: #1f4f46;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 6px 8px;
+  text-align: left;
+  overflow: hidden;
+}
+
+.slot-button span,
+.slot-button strong,
+.slot-button small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-button strong {
+  font-size: 0.78rem;
+}
+
+.slot-button small {
+  font-size: 0.72rem;
+  color: currentColor;
+  opacity: 0.78;
 }
 
 .slot-button.selected {
@@ -184,12 +220,14 @@ button:disabled {
   font-size: 2rem;
 }
 
-.reservation-form {
+.reservation-form,
+.user-form {
   display: grid;
   gap: 10px;
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid #cfd5d1;
@@ -224,6 +262,10 @@ textarea {
   width: 100%;
   background: #1f6f5f;
   color: #ffffff;
+}
+
+.primary-button.compact {
+  width: auto;
 }
 
 .secondary-button {
@@ -302,6 +344,113 @@ textarea {
   margin-top: 12px;
 }
 
+.selected-slots {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+  margin-bottom: 14px;
+}
+
+.selected-slot-row {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #d7e0dc;
+  border-radius: 6px;
+  background: #f7faf8;
+  color: #254b43;
+  padding: 7px 9px;
+}
+
+.admin-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.tabs {
+  border-bottom: 1px solid #d9dfdc;
+}
+
+.tabs button {
+  min-height: 40px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #52605b;
+  padding: 8px 12px;
+}
+
+.tabs button.active {
+  color: #1f4f46;
+  border-bottom-color: #1f6f5f;
+  font-weight: 700;
+}
+
+.user-form {
+  grid-template-columns: minmax(220px, 1fr) minmax(160px, 0.8fr) 140px 120px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.user-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.user-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 140px 110px 120px;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e1e4df;
+  border-radius: 8px;
+  background: #fbfbf8;
+}
+
+.user-row strong,
+.user-row span {
+  display: block;
+}
+
+.user-row span {
+  margin-top: 3px;
+  color: #68716d;
+  overflow-wrap: anywhere;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #43514c;
+}
+
+.toggle-label input {
+  width: auto;
+}
+
+.print-section {
+  margin-top: 0;
+}
+
+.print-actions {
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.print-calendar {
+  background: #ffffff;
+}
+
+.print-title {
+  display: none;
+}
+
 @media (max-width: 1180px) {
   .workspace {
     grid-template-columns: 1fr;
@@ -322,6 +471,11 @@ textarea {
     flex-direction: column;
   }
 
+  .user-form,
+  .user-row {
+    grid-template-columns: 1fr;
+  }
+
   .weekday-row,
   .calendar-grid {
     grid-template-columns: 1fr;
@@ -333,5 +487,55 @@ textarea {
 
   .day-cell.empty {
     display: none;
+  }
+}
+
+@media print {
+  :root,
+  body {
+    background: #ffffff;
+  }
+
+  .app-shell {
+    width: 100%;
+    padding: 0;
+  }
+
+  .no-print,
+  .notice,
+  .tabs,
+  .topbar {
+    display: none !important;
+  }
+
+  .reservations-section,
+  .print-calendar {
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+
+  .print-title {
+    display: block;
+    margin: 0 0 12px;
+    font-size: 18px;
+  }
+
+  .weekday-row,
+  .calendar-grid {
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+  }
+
+  .day-cell {
+    min-height: 112px;
+    break-inside: avoid;
+  }
+
+  .slot-button {
+    min-height: 32px;
+    padding: 4px;
+    border-color: #999;
+    color: #111;
   }
 }

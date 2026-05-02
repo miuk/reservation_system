@@ -74,6 +74,19 @@ const reservationSchema = z.object({
   notes: z.string().trim().max(2000).optional().default('')
 });
 
+const userSchema = z.object({
+  email: z.string().trim().email().max(160),
+  name: z.string().trim().min(1).max(120),
+  role: z.enum(['user', 'admin']).default('user'),
+  active: z.boolean().default(true)
+});
+
+const userPatchSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  role: z.enum(['user', 'admin']).optional(),
+  active: z.boolean().optional()
+});
+
 function addMonths(date, months) {
   const result = new Date(date.getTime());
   result.setMonth(result.getMonth() + months);
@@ -91,6 +104,10 @@ function todayUtc() {
 
 function slotId(slot) {
   return `${slot.date}_${slot.period}`;
+}
+
+function userId(email) {
+  return email.trim().toLowerCase();
 }
 
 function normalizeSlots(slots) {
@@ -125,11 +142,23 @@ async function authenticate(req, res, next) {
       issuer: `https://securetoken.google.com/${env.projectId}`,
       audience: env.projectId
     });
+    const email = String(payload.email || '').toLowerCase();
+    const adminByEnv = env.adminEmails.has(email);
+    const userDoc = email ? await db.collection('allowedUsers').doc(userId(email)).get() : null;
+    const allowedUser = userDoc?.exists ? userDoc.data() : null;
+
+    if (!email || (!adminByEnv && allowedUser?.active !== true)) {
+      res.status(403).json({ error: '登録済みの利用者のみログインできます。' });
+      return;
+    }
+
     req.user = {
       uid: String(payload.user_id || payload.sub || ''),
-      email: String(payload.email || '').toLowerCase(),
+      email,
       name: String(payload.name || ''),
-      isAdmin: env.adminEmails.has(String(payload.email || '').toLowerCase())
+      role: allowedUser?.role || (adminByEnv ? 'admin' : 'user'),
+      isAdmin: adminByEnv || allowedUser?.role === 'admin',
+      allowedUserId: email
     };
     next();
   } catch (error) {
@@ -158,6 +187,16 @@ function serializeReservation(doc) {
   };
 }
 
+function serializeAllowedUser(doc) {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    ...data,
+    createdAt: data.createdAt?.toDate?.().toISOString() || null,
+    updatedAt: data.updatedAt?.toDate?.().toISOString() || null
+  };
+}
+
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
@@ -180,9 +219,25 @@ app.get('/api/availability', authenticate, async (req, res, next) => {
       .where('date', '>=', start)
       .where('date', '<=', end)
       .get();
+    const slots = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const missingGroupNameIds = [
+      ...new Set(slots.filter((slot) => !slot.groupName && slot.reservationId).map((slot) => slot.reservationId))
+    ];
+    const reservationNames = new Map();
+    await Promise.all(
+      missingGroupNameIds.map(async (reservationId) => {
+        const reservation = await db.collection('reservations').doc(reservationId).get();
+        if (reservation.exists) {
+          reservationNames.set(reservationId, reservation.data().groupName || '');
+        }
+      })
+    );
 
     res.json({
-      slots: snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })),
+      slots: slots.map((slot) => ({
+        ...slot,
+        groupName: slot.groupName || reservationNames.get(slot.reservationId) || ''
+      })),
       periods: PERIODS.map((id) => ({ id, label: PERIOD_LABELS[id] }))
     });
   } catch (error) {
@@ -198,6 +253,79 @@ app.get('/api/reservations', authenticate, async (req, res, next) => {
     }
     const snapshot = await query.get();
     res.json({ reservations: snapshot.docs.map(serializeReservation) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/users', authenticate, requireAdmin, async (_req, res, next) => {
+  try {
+    const snapshot = await db.collection('allowedUsers').orderBy('email').get();
+    res.json({ users: snapshot.docs.map(serializeAllowedUser) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/users', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const parsed = userSchema.parse(req.body);
+    const email = userId(parsed.email);
+    const ref = db.collection('allowedUsers').doc(email);
+    const now = FieldValue.serverTimestamp();
+    await ref.set(
+      {
+        ...parsed,
+        email,
+        createdBy: req.user,
+        updatedBy: req.user,
+        createdAt: now,
+        updatedAt: now
+      },
+      { merge: true }
+    );
+    res.status(201).json({ user: serializeAllowedUser(await ref.get()) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/admin/users/:email', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const parsed = userPatchSchema.parse(req.body);
+    const email = userId(req.params.email);
+    const ref = db.collection('allowedUsers').doc(email);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      res.status(404).json({ error: '利用者が見つかりません。' });
+      return;
+    }
+    await ref.update({
+      ...parsed,
+      updatedBy: req.user,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    res.json({ user: serializeAllowedUser(await ref.get()) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/admin/users/:email', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const email = userId(req.params.email);
+    const ref = db.collection('allowedUsers').doc(email);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      res.status(404).json({ error: '利用者が見つかりません。' });
+      return;
+    }
+    await ref.update({
+      active: false,
+      updatedBy: req.user,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    res.json({ user: serializeAllowedUser(await ref.get()) });
   } catch (error) {
     next(error);
   }
@@ -238,6 +366,7 @@ app.post('/api/reservations', authenticate, async (req, res, next) => {
           date: slot.date,
           period: slot.period,
           periodLabel: PERIOD_LABELS[slot.period],
+          groupName: parsed.groupName,
           reservationId: reservationRef.id,
           status: 'pending',
           createdBy: req.user,
