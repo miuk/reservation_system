@@ -66,6 +66,34 @@ backend は public にせず、frontend のサービスアカウントからだ�
 
 frontend proxy は Cloud Run metadata server から Google-signed ID token を取得し、`X-Serverless-Authorization` ヘッダーで backend に送ります。ブラウザから受け取った Firebase ID token の `Authorization` ヘッダーはそのまま backend に転送します。
 
+### Cloud Build
+
+backend と frontend は別々にビルド/デプロイします。Artifact Registry の `cloud-run-source-deploy` リポジトリを事前に作成してください。
+
+```sh
+gcloud artifacts repositories create cloud-run-source-deploy \
+  --repository-format=docker \
+  --location=asia-northeast1
+```
+
+backend:
+
+```sh
+gcloud builds submit backend \
+  --config=backend/cloudbuild.yaml \
+  --substitutions=_REGION=asia-northeast1,_SERVICE_NAME=reservation-backend,_FIREBASE_PROJECT_ID=your-firebase-project-id,_ADMIN_EMAILS=admin@example.com,_SERVICE_ACCOUNT=backend-sa@PROJECT_ID.iam.gserviceaccount.com
+```
+
+frontend:
+
+```sh
+gcloud builds submit frontend \
+  --config=frontend/cloudbuild.yaml \
+  --substitutions=_REGION=asia-northeast1,_SERVICE_NAME=reservation-frontend,_BACKEND_URL=https://backend-service-url,_BACKEND_AUDIENCE=https://backend-service-url,_VITE_FIREBASE_API_KEY=your-api-key,_VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com,_VITE_FIREBASE_PROJECT_ID=your-firebase-project-id,_VITE_FIREBASE_APP_ID=your-app-id,_SERVICE_ACCOUNT=frontend-sa@PROJECT_ID.iam.gserviceaccount.com
+```
+
+backend は `--no-allow-unauthenticated` でデプロイされます。frontend の Cloud Run 実行サービスアカウントに、backend の `roles/run.invoker` を付与してください。
+
 ## Firestore データ
 
 - `reservations/{reservationId}`: 申込単位
