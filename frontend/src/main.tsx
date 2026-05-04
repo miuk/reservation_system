@@ -75,7 +75,7 @@ const missingFirebaseConfig = Object.entries(firebaseConfig)
 
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
 
 function authErrorMessage(error: unknown) {
   if (!(error instanceof Error)) return 'Googleログインに失敗しました。';

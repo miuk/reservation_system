@@ -48,6 +48,24 @@ docker compose up --build
 
 フロントエンドの `VITE_FIREBASE_*` はビルド時に埋め込まれます。Cloud Run 用のイメージを作る場合も、同じ build args を指定してください。
 
+## Cloud Run 配置
+
+ブラウザは frontend にだけアクセスし、frontend の Node proxy が backend に `/api/*` を転送します。
+
+```text
+Browser -> frontend Cloud Run -> backend Cloud Run -> Firestore
+```
+
+backend は public にせず、frontend のサービスアカウントからだけ呼べるようにします。
+
+- frontend Cloud Run: public
+- backend Cloud Run: internal/private
+- backend の Cloud Run Invoker: frontend のサービスアカウントにだけ付与
+- frontend runtime env: `BACKEND_URL=https://backend-service-xxxxx.run.app`
+- 必要なら `BACKEND_AUDIENCE` に backend の Cloud Run URL を指定
+
+frontend proxy は Cloud Run metadata server から Google-signed ID token を取得し、`X-Serverless-Authorization` ヘッダーで backend に送ります。ブラウザから受け取った Firebase ID token の `Authorization` ヘッダーはそのまま backend に転送します。
+
 ## Firestore データ
 
 - `reservations/{reservationId}`: 申込単位
