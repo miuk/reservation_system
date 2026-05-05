@@ -81,7 +81,7 @@ function authErrorMessage(error: unknown) {
   if (!(error instanceof Error)) return 'Googleログインに失敗しました。';
   const message = error.message;
   if (message.includes('auth/unauthorized-domain')) {
-    return 'Firebase Authentication の承認済みドメインに localhost が登録されていません。Firebase Console で Authentication > Settings > Authorized domains に localhost を追加してください。';
+    return `Firebase Authentication の承認済みドメインに ${window.location.hostname} が登録されていません。Firebase Console で Authentication > Settings > Authorized domains に ${window.location.hostname} を追加してください。`;
   }
   if (message.includes('auth/operation-not-allowed')) {
     return 'Firebase Authentication で Google ログインが有効になっていません。Sign-in method で Google を有効化してください。';
