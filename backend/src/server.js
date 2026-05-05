@@ -137,11 +137,24 @@ async function authenticate(req, res, next) {
     return;
   }
 
+  let payload;
   try {
-    const { payload } = await jwtVerify(match[1], firebaseJwks, {
+    const verified = await jwtVerify(match[1], firebaseJwks, {
       issuer: `https://securetoken.google.com/${env.projectId}`,
       audience: env.projectId
     });
+    payload = verified.payload;
+  } catch (error) {
+    console.warn('Firebase ID token verification failed:', {
+      expectedIssuer: `https://securetoken.google.com/${env.projectId}`,
+      expectedAudience: env.projectId,
+      error: error instanceof Error ? error.message : error
+    });
+    res.status(401).json({ error: '認証トークンが無効です。' });
+    return;
+  }
+
+  try {
     const email = String(payload.email || '').toLowerCase();
     const adminByEnv = env.adminEmails.has(email);
     const userDoc = email ? await db.collection('allowedUsers').doc(userId(email)).get() : null;
@@ -162,8 +175,7 @@ async function authenticate(req, res, next) {
     };
     next();
   } catch (error) {
-    console.warn('Firebase ID token verification failed:', error instanceof Error ? error.message : error);
-    res.status(401).json({ error: '認証トークンが無効です。' });
+    next(error);
   }
 }
 

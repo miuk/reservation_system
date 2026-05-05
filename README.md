@@ -94,6 +94,8 @@ gcloud builds submit frontend \
   --substitutions=_REGION=asia-northeast1,_SERVICE_NAME=reservation-frontend,_BACKEND_URL=https://backend-service-url,_BACKEND_AUDIENCE=https://backend-service-url,_VITE_FIREBASE_API_KEY=your-api-key,_VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com,_VITE_FIREBASE_PROJECT_ID=your-firebase-project-id,_VITE_FIREBASE_APP_ID=your-app-id,_SERVICE_ACCOUNT=frontend-sa@PROJECT_ID.iam.gserviceaccount.com
 ```
 
+`_FIREBASE_PROJECT_ID` と `_VITE_FIREBASE_PROJECT_ID` は同じ Firebase project ID を指定してください。GCP project ID と Firebase project ID が違う場合、`${PROJECT_ID}` を使うと Firebase ID token の検証に失敗します。
+
 backend は `--no-allow-unauthenticated` でデプロイされます。frontend の Cloud Run 実行サービスアカウントに、backend の `roles/run.invoker` を付与してください。
 
 ## Firestore データ
