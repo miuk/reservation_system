@@ -186,9 +186,15 @@ function App() {
         ...(init?.headers || {})
       }
     });
-    const body = await response.json();
+    const text = await response.text();
+    let body: { error?: string } = {};
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { error: text || `${response.status} ${response.statusText}` };
+    }
     if (!response.ok) throw new Error(body.error || 'APIエラーが発生しました。');
-    return body;
+    return body as T;
   }
 
   async function refresh() {

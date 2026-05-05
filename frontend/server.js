@@ -47,6 +47,7 @@ async function getCloudRunIdentityToken() {
 app.use('/api', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
   try {
     const targetUrl = `${backendUrl}${req.originalUrl}`;
+    console.log(`proxy ${req.method} ${req.originalUrl} -> ${targetUrl}`);
     const headers = new Headers();
     for (const [key, value] of Object.entries(req.headers)) {
       if (!value) continue;
@@ -65,6 +66,7 @@ app.use('/api', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => 
       headers,
       body: req.method === 'GET' || req.method === 'HEAD' ? undefined : req.body
     });
+    console.log(`proxy response ${response.status} ${req.method} ${req.originalUrl}`);
 
     res.status(response.status);
     response.headers.forEach((value, key) => {
