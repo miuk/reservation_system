@@ -83,7 +83,7 @@ backend:
 ```sh
 gcloud builds submit backend \
   --config=backend/cloudbuild.yaml \
-  --substitutions=_REGION=asia-northeast1,_SERVICE_NAME=reservation-backend,_FIREBASE_PROJECT_ID=your-firebase-project-id,_ADMIN_EMAILS=admin@example.com,_SERVICE_ACCOUNT=backend-sa@PROJECT_ID.iam.gserviceaccount.com
+  --substitutions=_REGION=asia-northeast1,_SERVICE_NAME=reservation-backend,_FIREBASE_PROJECT_ID=your-firebase-project-id,_FIRESTORE_PROJECT_ID=your-firestore-project-id,_ADMIN_EMAILS=admin@example.com,_SERVICE_ACCOUNT=backend-sa@PROJECT_ID.iam.gserviceaccount.com
 ```
 
 frontend:
@@ -109,5 +109,6 @@ backend は `--no-allow-unauthenticated` でデプロイされます。frontend 
 ## 管理者
 
 `backend/.env` の `FIREBASE_PROJECT_ID` には `frontend/.env.local` の `VITE_FIREBASE_PROJECT_ID` と同じ値を指定してください。
+`FIRESTORE_PROJECT_ID` には Firestore database がある Google Cloud/Firebase project ID を指定してください。Firebase Auth と Firestore が同じ project なら同じ値で構いません。
 `ADMIN_EMAILS` にはカンマ区切りで初期管理者の Google アカウント email を指定します。
 初期管理者は `allowedUsers` 未登録でもログインでき、管理者画面から利用者を追加できます。

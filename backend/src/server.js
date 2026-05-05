@@ -17,6 +17,7 @@ const env = {
   port: Number(process.env.PORT || 8080),
   frontendOrigin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
   projectId: process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
+  firestoreProjectId: process.env.FIRESTORE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
   databaseId: process.env.FIRESTORE_DATABASE_ID || '(default)',
   adminEmails: new Set(
     (process.env.ADMIN_EMAILS || '')
@@ -32,8 +33,8 @@ if (!env.projectId) {
 
 const db = new Firestore(
   env.databaseId === '(default)'
-    ? { projectId: env.projectId }
-    : { projectId: env.projectId, databaseId: env.databaseId }
+    ? { projectId: env.firestoreProjectId }
+    : { projectId: env.firestoreProjectId, databaseId: env.databaseId }
 );
 const firebaseJwks = createRemoteJWKSet(
   new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com')
@@ -463,4 +464,9 @@ app.use((error, _req, res, _next) => {
 
 app.listen(env.port, () => {
   console.log(`reservation backend listening on ${env.port}`);
+  console.log('backend runtime config:', {
+    firebaseProjectId: env.projectId,
+    firestoreProjectId: env.firestoreProjectId,
+    firestoreDatabaseId: env.databaseId
+  });
 });
