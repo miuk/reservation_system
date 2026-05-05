@@ -79,8 +79,17 @@ app.use('/api', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => 
   }
 });
 
-app.use(express.static(path.join(__dirname, 'dist')));
+app.use(
+  express.static(path.join(__dirname, 'dist'), {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-store');
+      }
+    }
+  })
+);
 app.get('*', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 

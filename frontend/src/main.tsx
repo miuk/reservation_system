@@ -75,7 +75,6 @@ const missingFirebaseConfig = Object.entries(firebaseConfig)
 
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
 
 function authErrorMessage(error: unknown) {
   if (!(error instanceof Error)) return 'Googleログインに失敗しました。';
@@ -179,7 +178,7 @@ function App() {
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const idToken = await token();
-    const response = await fetch(`${apiBaseUrl}${path}`, {
+    const response = await fetch(path, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
