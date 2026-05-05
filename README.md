@@ -98,6 +98,86 @@ gcloud builds submit frontend \
 
 backend は `--no-allow-unauthenticated` でデプロイされます。frontend の Cloud Run 実行サービスアカウントに、backend の `roles/run.invoker` を付与してください。
 
+### IAM 設定
+
+以下の例では、Cloud Run をデプロイする Google Cloud project を `CLOUD_RUN_PROJECT_ID`、Firebase Auth/Firestore がある project を `FIREBASE_PROJECT_ID` としています。同じ project の場合は同じ値を指定してください。
+
+```sh
+CLOUD_RUN_PROJECT_ID=reservation-system-494801
+FIREBASE_PROJECT_ID=reservation-system-5aa43
+REGION=asia-northeast1
+
+PROJECT_NUMBER=$(gcloud projects describe $CLOUD_RUN_PROJECT_ID --format='value(projectNumber)')
+BUILD_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+FRONTEND_RUN_SA=frontend-sa@${CLOUD_RUN_PROJECT_ID}.iam.gserviceaccount.com
+BACKEND_RUN_SA=backend-sa@${CLOUD_RUN_PROJECT_ID}.iam.gserviceaccount.com
+```
+
+Cloud Build の実行サービスアカウントに Cloud Run を更新する権限を付与します。
+
+```sh
+gcloud projects add-iam-policy-binding $CLOUD_RUN_PROJECT_ID \
+  --member="serviceAccount:${BUILD_SA}" \
+  --role="roles/run.admin"
+```
+
+Cloud Build が frontend/backend の実行サービスアカウントを指定できるようにします。
+
+```sh
+gcloud iam service-accounts add-iam-policy-binding $FRONTEND_RUN_SA \
+  --member="serviceAccount:${BUILD_SA}" \
+  --role="roles/iam.serviceAccountUser"
+
+gcloud iam service-accounts add-iam-policy-binding $BACKEND_RUN_SA \
+  --member="serviceAccount:${BUILD_SA}" \
+  --role="roles/iam.serviceAccountUser"
+```
+
+backend が Firestore を読み書きできるようにします。Firestore を Firebase project 側で作成した場合、この権限は Firebase project 側に付与してください。
+
+```sh
+gcloud projects add-iam-policy-binding $FIREBASE_PROJECT_ID \
+  --member="serviceAccount:${BACKEND_RUN_SA}" \
+  --role="roles/datastore.user"
+```
+
+frontend proxy が `Require authentication` の backend Cloud Run を呼べるようにします。
+
+```sh
+gcloud run services add-iam-policy-binding reservation-backend \
+  --project=$CLOUD_RUN_PROJECT_ID \
+  --region=$REGION \
+  --member="serviceAccount:${FRONTEND_RUN_SA}" \
+  --role="roles/run.invoker"
+```
+
+frontend は public にする必要があります。Cloud Build の `--allow-unauthenticated` が IAM policy 設定に失敗した場合は、権限のあるアカウントで手動設定してください。
+
+```sh
+gcloud run services add-iam-policy-binding reservation-frontend \
+  --project=$CLOUD_RUN_PROJECT_ID \
+  --region=$REGION \
+  --member="allUsers" \
+  --role="roles/run.invoker"
+```
+
+現在の設定確認:
+
+```sh
+gcloud run services describe reservation-backend \
+  --project=$CLOUD_RUN_PROJECT_ID \
+  --region=$REGION \
+  --format='yaml(spec.template.spec.serviceAccountName,spec.template.spec.containers[0].env,status.traffic)'
+
+gcloud run services get-iam-policy reservation-backend \
+  --project=$CLOUD_RUN_PROJECT_ID \
+  --region=$REGION
+
+gcloud run services get-iam-policy reservation-frontend \
+  --project=$CLOUD_RUN_PROJECT_ID \
+  --region=$REGION
+```
+
 ## Firestore データ
 
 - `reservations/{reservationId}`: 申込単位
