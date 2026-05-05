@@ -30,7 +30,7 @@ steps:
       - --region=${_REGION}
       - --platform=managed
       - --no-allow-unauthenticated
-      - --ingress=internal-and-cloud-load-balancing
+      - --ingress=all
       - --port=8080
       - --set-env-vars=FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID},FIRESTORE_DATABASE_ID=${_FIRESTORE_DATABASE_ID},FRONTEND_ORIGIN=${_FRONTEND_ORIGIN},ADMIN_EMAILS=${_ADMIN_EMAILS}
       - --service-account=${_SERVICE_ACCOUNT}

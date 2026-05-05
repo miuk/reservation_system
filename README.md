@@ -56,15 +56,17 @@ docker compose up --build
 Browser -> frontend Cloud Run -> backend Cloud Run -> Firestore
 ```
 
-backend は public にせず、frontend のサービスアカウントからだけ呼べるようにします。
+backend は Cloud Run IAM 認証を必須にし、frontend のサービスアカウントからだけ呼べるようにします。
 
 - frontend Cloud Run: public
-- backend Cloud Run: internal/private
+- backend Cloud Run: `--no-allow-unauthenticated`
 - backend の Cloud Run Invoker: frontend のサービスアカウントにだけ付与
 - frontend runtime env: `BACKEND_URL=https://backend-service-xxxxx.run.app`
 - 必要なら `BACKEND_AUDIENCE` に backend の Cloud Run URL を指定
 
 frontend proxy は Cloud Run metadata server から Google-signed ID token を取得し、`X-Serverless-Authorization` ヘッダーで backend に送ります。ブラウザから受け取った Firebase ID token の `Authorization` ヘッダーはそのまま backend に転送します。
+
+この構成では backend の `run.app` URL 自体は存在しますが、Cloud Run IAM により未認証の直接アクセスは拒否されます。backend の ingress を `internal` または `internal-and-cloud-load-balancing` にする場合、frontend から backend への通信を VPC 経由にする追加構成が必要です。
 
 ### Cloud Build
 
