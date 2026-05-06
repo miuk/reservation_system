@@ -2,6 +2,8 @@ node_modules/
 dist/
 .env
 .env.local
+*-firebase-adminsdk-*.json
+memo.md
 .DS_Store
 *.log
 *~
