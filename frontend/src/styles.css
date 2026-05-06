@@ -483,6 +483,54 @@ textarea {
   display: none;
 }
 
+.data-tools {
+  display: grid;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.data-tool-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid #e4e7e2;
+}
+
+.data-tool-panel:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.data-tool-panel h3 {
+  margin: 0 0 5px;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.data-tool-panel p {
+  margin: 0;
+  color: #68716d;
+}
+
+.data-tool-panel select,
+.data-tool-panel input,
+.data-tool-panel .file-input {
+  min-width: 220px;
+}
+
+.data-tool-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.danger-panel {
+  border-top-color: #efd5d0;
+}
+
 @media (max-width: 1180px) {
   .workspace {
     grid-template-columns: 1fr;
@@ -504,8 +552,23 @@ textarea {
   }
 
   .user-form,
-  .user-row {
+  .user-row,
+  .data-tool-panel {
     grid-template-columns: 1fr;
+  }
+
+  .data-tool-controls {
+    justify-content: stretch;
+  }
+
+  .data-tool-controls > * {
+    width: 100%;
+  }
+
+  .data-tool-panel select,
+  .data-tool-panel input,
+  .data-tool-panel .file-input {
+    min-width: 0;
   }
 
   .weekday-row,

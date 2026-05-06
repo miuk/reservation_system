@@ -43,14 +43,19 @@ const firebaseJwks = createRemoteJWKSet(
 const app = express();
 app.use(helmet());
 app.use(cors({ origin: env.frontendOrigin, credentials: true }));
-app.use(express.json({ limit: '256kb' }));
+app.use(express.json({ limit: '5mb' }));
 
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled promise rejection:', error);
 });
 
+const dateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+});
+
 const slotSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: dateStringSchema,
   period: z.enum(PERIODS)
 });
 
@@ -87,6 +92,55 @@ const userPatchSchema = z.object({
   role: z.enum(['user', 'admin']).optional(),
   active: z.boolean().optional()
 });
+
+const reservationImportSchema = z
+  .object({
+    id: z.string().trim().min(1).max(200).optional(),
+    slots: z.array(slotSchema).min(1),
+    status: z.enum(['pending', 'approved', 'cancelled']).default('pending'),
+    groupName: z.string().trim().min(1).max(120),
+    representative: z.object({
+      name: z.string().trim().min(1).max(120),
+      phone: z.string().trim().min(1).max(40),
+      email: z.string().trim().email().max(160)
+    }),
+    secondaryRepresentative: z
+      .object({
+        name: z.string().trim().max(120).optional().default(''),
+        phone: z.string().trim().max(40).optional().default(''),
+        email: z.union([z.string().trim().email(), z.literal('')]).optional().default('')
+      })
+      .optional()
+      .default({}),
+    expectedAttendees: z.coerce.number().int().positive().max(100000),
+    purpose: z.string().trim().min(1).max(1000),
+    notes: z.string().trim().max(2000).optional().default(''),
+    createdBy: z.unknown().optional(),
+    approvedBy: z.unknown().optional(),
+    cancelledBy: z.unknown().optional(),
+    createdAt: z.string().datetime().nullable().optional(),
+    updatedAt: z.string().datetime().nullable().optional(),
+    approvedAt: z.string().datetime().nullable().optional(),
+    cancelledAt: z.string().datetime().nullable().optional()
+  })
+  .passthrough();
+
+const reservationImportBodySchema = z.object({
+  mode: z.enum(['merge', 'replace']).default('merge'),
+  reservations: z.array(reservationImportSchema)
+});
+
+const reservationDeleteSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('all'),
+    confirm: z.literal('DELETE_ALL_RESERVATIONS')
+  }),
+  z.object({
+    mode: z.literal('before'),
+    cutoffDate: dateStringSchema,
+    confirm: z.literal('DELETE_RESERVATIONS_BEFORE_DATE')
+  })
+]);
 
 function addMonths(date, months) {
   const result = new Date(date.getTime());
@@ -208,6 +262,121 @@ function serializeAllowedUser(doc) {
     createdAt: data.createdAt?.toDate?.().toISOString() || null,
     updatedAt: data.updatedAt?.toDate?.().toISOString() || null
   };
+}
+
+function importedTimestamp(value, fallback = null) {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
+function reservationDataForImport(reservation, now) {
+  const slots = normalizeSlots(reservation.slots);
+  return {
+    ...reservation,
+    slots,
+    updatedAt: importedTimestamp(reservation.updatedAt, now),
+    createdAt: importedTimestamp(reservation.createdAt, now),
+    approvedAt: importedTimestamp(reservation.approvedAt, null),
+    cancelledAt: importedTimestamp(reservation.cancelledAt, null)
+  };
+}
+
+async function deleteCollection(collectionName) {
+  const snapshot = await db.collection(collectionName).get();
+  let batch = db.batch();
+  let count = 0;
+  for (const doc of snapshot.docs) {
+    batch.delete(doc.ref);
+    count += 1;
+    if (count >= 450) {
+      await batch.commit();
+      batch = db.batch();
+      count = 0;
+    }
+  }
+  if (count > 0) {
+    await batch.commit();
+  }
+}
+
+async function writeImportedReservations(reservations) {
+  let batch = db.batch();
+  let count = 0;
+  const commitIfNeeded = async () => {
+    if (count >= 450) {
+      await batch.commit();
+      batch = db.batch();
+      count = 0;
+    }
+  };
+
+  for (const reservation of reservations) {
+    const reservationRef = reservation.id
+      ? db.collection('reservations').doc(reservation.id)
+      : db.collection('reservations').doc();
+    const { id: _id, ...data } = reservation;
+    batch.set(reservationRef, data, { merge: false });
+    count += 1;
+    await commitIfNeeded();
+
+    if (reservation.status !== 'cancelled') {
+      for (const slot of reservation.slots) {
+        batch.set(
+          db.collection('reservationSlots').doc(slotId(slot)),
+          {
+            date: slot.date,
+            period: slot.period,
+            periodLabel: PERIOD_LABELS[slot.period],
+            groupName: reservation.groupName,
+            reservationId: reservationRef.id,
+            status: reservation.status,
+            createdBy: reservation.createdBy || null,
+            createdAt: reservation.createdAt || null,
+            updatedAt: reservation.updatedAt || null
+          },
+          { merge: false }
+        );
+        count += 1;
+        await commitIfNeeded();
+      }
+    }
+  }
+
+  if (count > 0) {
+    await batch.commit();
+  }
+}
+
+async function deleteReservationDocs(docs) {
+  let batch = db.batch();
+  let count = 0;
+  let deleted = 0;
+  const commitIfNeeded = async () => {
+    if (count >= 450) {
+      await batch.commit();
+      batch = db.batch();
+      count = 0;
+    }
+  };
+
+  for (const doc of docs) {
+    const reservation = doc.data();
+    for (const slot of reservation.slots || []) {
+      batch.delete(db.collection('reservationSlots').doc(slotId(slot)));
+      count += 1;
+      await commitIfNeeded();
+    }
+    batch.delete(doc.ref);
+    count += 1;
+    deleted += 1;
+    await commitIfNeeded();
+  }
+
+  if (count > 0) {
+    await batch.commit();
+  }
+  return deleted;
 }
 
 app.get('/health', (_req, res) => {
@@ -340,6 +509,85 @@ app.delete('/api/admin/users/:email', authenticate, requireAdmin, async (req, re
       updatedAt: FieldValue.serverTimestamp()
     });
     res.json({ user: serializeAllowedUser(await ref.get()) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/reservations/export', authenticate, requireAdmin, async (_req, res, next) => {
+  try {
+    const snapshot = await db.collection('reservations').orderBy('createdAt', 'desc').get();
+    res.json({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      reservations: snapshot.docs.map(serializeReservation)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/reservations/import', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const parsed = reservationImportBodySchema.parse(Array.isArray(req.body) ? { reservations: req.body } : req.body);
+    const now = new Date();
+    const reservations = parsed.reservations.map((reservation) => reservationDataForImport(reservation, now));
+
+    const seenSlots = new Map();
+    for (const reservation of reservations) {
+      if (reservation.slots.length !== normalizeSlots(reservation.slots).length) {
+        res.status(400).json({ error: 'インポートデータに同一予約内の重複コマがあります。' });
+        return;
+      }
+      if (reservation.status === 'cancelled') continue;
+      for (const slot of reservation.slots) {
+        const key = slotId(slot);
+        const previous = seenSlots.get(key);
+        if (previous && previous !== reservation.id) {
+          res.status(400).json({ error: `インポートデータ内でコマが重複しています: ${key}` });
+          return;
+        }
+        seenSlots.set(key, reservation.id || key);
+      }
+    }
+
+    if (parsed.mode === 'merge') {
+      for (const [key, reservationId] of seenSlots.entries()) {
+        const existing = await db.collection('reservationSlots').doc(key).get();
+        if (existing.exists && existing.data().reservationId !== reservationId) {
+          res.status(409).json({ error: `既存予約と競合するコマがあります: ${key}` });
+          return;
+        }
+      }
+    } else {
+      await deleteCollection('reservationSlots');
+      await deleteCollection('reservations');
+    }
+
+    await writeImportedReservations(reservations);
+    res.json({ imported: reservations.length, mode: parsed.mode });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/reservations/delete', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const parsed = reservationDeleteSchema.parse(req.body);
+    if (parsed.mode === 'all') {
+      await deleteCollection('reservationSlots');
+      await deleteCollection('reservations');
+      res.json({ deleted: 'all', mode: parsed.mode });
+      return;
+    }
+
+    const snapshot = await db.collection('reservations').get();
+    const targets = snapshot.docs.filter((doc) => {
+      const slots = doc.data().slots || [];
+      return slots.length > 0 && slots.every((slot) => slot.date <= parsed.cutoffDate);
+    });
+    const deleted = await deleteReservationDocs(targets);
+    res.json({ deleted, mode: parsed.mode, cutoffDate: parsed.cutoffDate });
   } catch (error) {
     next(error);
   }

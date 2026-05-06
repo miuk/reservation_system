@@ -5,11 +5,13 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Download,
   LogIn,
   LogOut,
   Printer,
   ShieldCheck,
   Trash2,
+  Upload,
   UserPlus,
   X
 } from 'lucide-react';
@@ -58,7 +60,7 @@ type AllowedUser = {
   role: 'user' | 'admin';
   active: boolean;
 };
-type AdminTab = 'reservations' | 'users' | 'print';
+type AdminTab = 'reservations' | 'users' | 'print' | 'data';
 
 const PERIODS: Array<{ id: Period; label: string }> = [
   { id: 'morning', label: '午前' },
@@ -180,6 +182,8 @@ function App() {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [adminTab, setAdminTab] = useState<AdminTab>('reservations');
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
+  const [cleanupDate, setCleanupDate] = useState('');
   const [path, setPath] = useState(window.location.pathname);
   const [userForm, setUserForm] = useState({ email: '', name: '', role: 'user' as 'user' | 'admin' });
   const [form, setForm] = useState({
@@ -429,6 +433,111 @@ function App() {
     }
   }
 
+  async function exportReservations() {
+    setLoading(true);
+    setMessage('');
+    try {
+      const exportData = await api('/api/admin/reservations/export');
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `reservations-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setMessage('予約データをエクスポートしました。');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '予約データのエクスポートに失敗しました。');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function importReservations(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const fileInput = event.currentTarget.elements.namedItem('reservationImportFile') as HTMLInputElement | null;
+    const file = fileInput?.files?.[0];
+    if (!file) {
+      setMessage('インポートするJSONファイルを選択してください。');
+      return;
+    }
+    if (importMode === 'replace' && !window.confirm('既存の予約データをすべて削除して、選択したJSONの内容に置き換えます。実行しますか？')) {
+      return;
+    }
+
+    setLoading(true);
+    setMessage('');
+    try {
+      const json = JSON.parse(await file.text());
+      const reservations = Array.isArray(json) ? json : json.reservations;
+      if (!Array.isArray(reservations)) {
+        throw new Error('予約データの形式が正しくありません。');
+      }
+      const result = await api<{ imported: number; mode: 'merge' | 'replace' }>('/api/admin/reservations/import', {
+        method: 'POST',
+        body: JSON.stringify({ mode: importMode, reservations })
+      });
+      event.currentTarget.reset();
+      await refresh();
+      setMessage(`予約データを${result.imported}件インポートしました。`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '予約データのインポートに失敗しました。');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteAllReservations() {
+    if (!window.confirm('すべての予約データを削除します。実行しますか？')) {
+      return;
+    }
+    setLoading(true);
+    setMessage('');
+    try {
+      await api('/api/admin/reservations/delete', {
+        method: 'POST',
+        body: JSON.stringify({ mode: 'all', confirm: 'DELETE_ALL_RESERVATIONS' })
+      });
+      await refresh();
+      setMessage('すべての予約データを削除しました。');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '予約データの削除に失敗しました。');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteReservationsBefore(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!cleanupDate) {
+      setMessage('削除対象の日付を指定してください。');
+      return;
+    }
+    if (!window.confirm(`${cleanupDate} 以前の予約データを削除します。実行しますか？`)) {
+      return;
+    }
+    setLoading(true);
+    setMessage('');
+    try {
+      const result = await api<{ deleted: number; cutoffDate: string }>('/api/admin/reservations/delete', {
+        method: 'POST',
+        body: JSON.stringify({
+          mode: 'before',
+          cutoffDate: cleanupDate,
+          confirm: 'DELETE_RESERVATIONS_BEFORE_DATE'
+        })
+      });
+      await refresh();
+      setMessage(`${result.cutoffDate} 以前の予約データを${result.deleted}件削除しました。`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '予約データの削除に失敗しました。');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function Calendar({ selectable, printMode = false }: { selectable: boolean; printMode?: boolean }) {
     const days = printMode ? printRangeDays(currentMonth) : monthDays(currentMonth);
     return (
@@ -613,6 +722,7 @@ function App() {
                 <button className={adminTab === 'reservations' ? 'active' : ''} onClick={() => setAdminTab('reservations')}>予約管理</button>
                 <button className={adminTab === 'users' ? 'active' : ''} onClick={() => setAdminTab('users')}>利用者管理</button>
                 <button className={adminTab === 'print' ? 'active' : ''} onClick={() => setAdminTab('print')}>印刷</button>
+                <button className={adminTab === 'data' ? 'active' : ''} onClick={() => setAdminTab('data')}>データ</button>
               </div>
 
               {adminTab === 'reservations' && (
@@ -672,6 +782,67 @@ function App() {
                     </button>
                   </div>
                   <Calendar selectable={false} printMode />
+                </section>
+              )}
+
+              {adminTab === 'data' && (
+                <section className="reservations-section">
+                  <h2>予約データ</h2>
+                  <div className="data-tools">
+                    <article className="data-tool-panel">
+                      <div>
+                        <h3>エクスポート</h3>
+                        <p>全予約データをJSONファイルとして出力します。</p>
+                      </div>
+                      <button className="primary-button compact" disabled={loading} onClick={exportReservations}>
+                        <Download size={18} />
+                        エクスポート
+                      </button>
+                    </article>
+
+                    <form className="data-tool-panel" onSubmit={importReservations}>
+                      <div>
+                        <h3>インポート</h3>
+                        <p>エクスポートしたJSONファイルを読み込みます。</p>
+                      </div>
+                      <div className="data-tool-controls">
+                        <select value={importMode} onChange={(e) => setImportMode(e.target.value as 'merge' | 'replace')}>
+                          <option value="merge">既存データに追加</option>
+                          <option value="replace">既存データを置き換え</option>
+                        </select>
+                        <input className="file-input" name="reservationImportFile" type="file" accept="application/json,.json" />
+                        <button className="secondary-button" disabled={loading}>
+                          <Upload size={18} />
+                          インポート
+                        </button>
+                      </div>
+                    </form>
+
+                    <form className="data-tool-panel danger-panel" onSubmit={deleteReservationsBefore}>
+                      <div>
+                        <h3>指定日付以前を消去</h3>
+                        <p>全コマが指定日付以前の予約データを削除します。</p>
+                      </div>
+                      <div className="data-tool-controls">
+                        <input type="date" value={cleanupDate} onChange={(e) => setCleanupDate(e.target.value)} />
+                        <button className="danger-button" disabled={loading}>
+                          <Trash2 size={18} />
+                          消去
+                        </button>
+                      </div>
+                    </form>
+
+                    <article className="data-tool-panel danger-panel">
+                      <div>
+                        <h3>全消去</h3>
+                        <p>すべての予約データを削除します。</p>
+                      </div>
+                      <button className="danger-button" disabled={loading} onClick={deleteAllReservations}>
+                        <Trash2 size={18} />
+                        全消去
+                      </button>
+                    </article>
+                  </div>
                 </section>
               )}
             </>
