@@ -124,6 +124,22 @@ function monthDays(month: Date) {
   return days;
 }
 
+function printRangeDays(month: Date) {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  let firstTuesday = new Date(year, monthIndex, 1);
+  while (firstTuesday.getDay() !== 2) {
+    firstTuesday = new Date(year, monthIndex, firstTuesday.getDate() + 1);
+  }
+  const start = new Date(firstTuesday);
+  start.setDate(firstTuesday.getDate() - firstTuesday.getDay());
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+}
+
 function statusLabel(status: ReservationStatus) {
   return { pending: '仮予約', approved: '予約確定', cancelled: '取消済み' }[status];
 }
@@ -390,6 +406,7 @@ function App() {
   }
 
   function Calendar({ selectable, printMode = false }: { selectable: boolean; printMode?: boolean }) {
+    const days = printMode ? printRangeDays(currentMonth) : monthDays(currentMonth);
     return (
       <div className={printMode ? 'print-calendar' : 'calendar-area'}>
         <div className="calendar-header no-print">
@@ -418,7 +435,7 @@ function App() {
           ))}
         </div>
         <div className="calendar-grid">
-          {monthDays(currentMonth).map((date, index) => {
+          {days.map((date, index) => {
             if (!date) return <div className="day-cell empty" key={`empty-${index}`} />;
             const dateString = isoDate(date);
             const outOfRange = dateString < minDate || dateString > maxDate;
