@@ -1,0 +1,41 @@
+substitutions:
+  _REGION: asia-northeast1
+  _SERVICE_NAME: reservation-backend
+  _FIREBASE_PROJECT_ID: ""
+  _FIRESTORE_PROJECT_ID: ""
+  _FIRESTORE_DATABASE_ID: (default)
+  _FRONTEND_ORIGIN: http://localhost:5173
+  _ADMIN_EMAILS: admin@example.com
+  _SERVICE_ACCOUNT: ""
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    dir: backend
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE_NAME}:${BUILD_ID}
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE_NAME}:${BUILD_ID}
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE_NAME}:${BUILD_ID}
+      - --region=${_REGION}
+      - --platform=managed
+      - --no-allow-unauthenticated
+      - --ingress=all
+      - --port=8080
+      - --set-env-vars=FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID},FIRESTORE_PROJECT_ID=${_FIRESTORE_PROJECT_ID},FIRESTORE_DATABASE_ID=${_FIRESTORE_DATABASE_ID},FRONTEND_ORIGIN=${_FRONTEND_ORIGIN},ADMIN_EMAILS=${_ADMIN_EMAILS}
+      - --service-account=${_SERVICE_ACCOUNT}
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE_NAME}:${BUILD_ID}

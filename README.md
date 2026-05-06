@@ -178,6 +178,77 @@ gcloud run services get-iam-policy reservation-frontend \
   --region=$REGION
 ```
 
+### Cloud Build Trigger
+
+GitHub 連携済みのリポジトリに対して、backend/frontend の trigger を分けて作成します。trigger ではリポジトリ全体が checkout されるため、`cloudbuild.trigger.yaml` を使います。
+
+```sh
+PROJECT_ID=reservation-system-494801
+REGION=asia-northeast1
+GITHUB_OWNER=your-github-owner
+GITHUB_REPO=reservation_system
+BUILD_SA=141960969945-compute@developer.gserviceaccount.com
+BACKEND_RUN_SA=backend-sa@${PROJECT_ID}.iam.gserviceaccount.com
+FRONTEND_RUN_SA=frontend-sa@${PROJECT_ID}.iam.gserviceaccount.com
+FIREBASE_PROJECT_ID=reservation-system-5aa43
+BACKEND_URL=https://reservation-backend-bfz7voz6dq-an.a.run.app
+FRONTEND_URL=https://reservation-frontend-bfz7voz6dq-an.a.run.app
+```
+
+backend trigger:
+
+```sh
+gcloud builds triggers create github \
+  --project=$PROJECT_ID \
+  --name=reservation-backend-main \
+  --region=$REGION \
+  --repo-owner=$GITHUB_OWNER \
+  --repo-name=$GITHUB_REPO \
+  --branch-pattern='^main$' \
+  --build-config=backend/cloudbuild.trigger.yaml \
+  --service-account=projects/$PROJECT_ID/serviceAccounts/$BUILD_SA \
+  --included-files='backend/**' \
+  --substitutions=_REGION=$REGION,_SERVICE_NAME=reservation-backend,_FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID,_FIRESTORE_PROJECT_ID=$FIREBASE_PROJECT_ID,_FRONTEND_ORIGIN=$FRONTEND_URL,_ADMIN_EMAILS=admin@example.com,_SERVICE_ACCOUNT=$BACKEND_RUN_SA
+```
+
+frontend trigger:
+
+```sh
+gcloud builds triggers create github \
+  --project=$PROJECT_ID \
+  --name=reservation-frontend-main \
+  --region=$REGION \
+  --repo-owner=$GITHUB_OWNER \
+  --repo-name=$GITHUB_REPO \
+  --branch-pattern='^main$' \
+  --build-config=frontend/cloudbuild.trigger.yaml \
+  --service-account=projects/$PROJECT_ID/serviceAccounts/$BUILD_SA \
+  --included-files='frontend/**' \
+  --substitutions=_REGION=$REGION,_SERVICE_NAME=reservation-frontend,_BACKEND_URL=$BACKEND_URL,_BACKEND_AUDIENCE=$BACKEND_URL,_VITE_FIREBASE_API_KEY=your-api-key,_VITE_FIREBASE_AUTH_DOMAIN=$FIREBASE_PROJECT_ID.firebaseapp.com,_VITE_FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID,_VITE_FIREBASE_APP_ID=your-app-id,_SERVICE_ACCOUNT=$FRONTEND_RUN_SA
+```
+
+作成済み trigger の確認:
+
+```sh
+gcloud builds triggers list --project=$PROJECT_ID --region=$REGION
+```
+
+手動実行:
+
+```sh
+gcloud builds triggers run reservation-backend-main \
+  --project=$PROJECT_ID \
+  --region=$REGION \
+  --branch=main
+
+gcloud builds triggers run reservation-frontend-main \
+  --project=$PROJECT_ID \
+  --region=$REGION \
+  --branch=main
+```
+
+Cloud Build 公式ドキュメントでは、GitHub trigger は `gcloud builds triggers create github` で作成し、trigger に指定した service account が trigger から起動される build に使われます。`--included-files` を指定すると、該当パスの変更時だけ trigger が起動します。
+
 ## Firestore データ
 
 - `reservations/{reservationId}`: 申込単位
