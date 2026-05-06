@@ -60,6 +60,11 @@ type AllowedUser = {
   role: 'user' | 'admin';
   active: boolean;
 };
+type AppConfig = {
+  resourceName: string;
+  reservationMonthsAhead: number;
+  maxSlotsPerRequest: number;
+};
 type AdminTab = 'reservations' | 'users' | 'print' | 'data';
 
 const PERIODS: Array<{ id: Period; label: string }> = [
@@ -68,7 +73,11 @@ const PERIODS: Array<{ id: Period; label: string }> = [
   { id: 'night', label: '夜' }
 ];
 const MIN_MONTH_OFFSET = -6;
-const MAX_MONTH_OFFSET = 6;
+const DEFAULT_APP_CONFIG: AppConfig = {
+  resourceName: '会議室',
+  reservationMonthsAhead: 6,
+  maxSlotsPerRequest: 50
+};
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -180,6 +189,7 @@ function App() {
   const [selectedSlots, setSelectedSlots] = useState<Slot[]>([]);
   const [monthOffset, setMonthOffset] = useState(0);
   const [message, setMessage] = useState('');
+  const [appConfig, setAppConfig] = useState<AppConfig>(DEFAULT_APP_CONFIG);
   const [loading, setLoading] = useState(false);
   const [adminTab, setAdminTab] = useState<AdminTab>('reservations');
   const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge');
@@ -201,7 +211,7 @@ function App() {
 
   const currentMonth = useMemo(() => addMonths(new Date(), monthOffset), [monthOffset]);
   const minDate = isoDate(new Date());
-  const maxDate = isoDate(addMonths(new Date(), 6));
+  const maxDate = isoDate(addMonths(new Date(), appConfig.reservationMonthsAhead));
   const occupiedByKey = useMemo(
     () => new Map(occupiedSlots.map((slot) => [slotKey(slot), slot])),
     [occupiedSlots]
@@ -256,6 +266,36 @@ function App() {
       setAllowedUsers(userList.users);
     }
   }
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(async (response) => {
+        if (!response.ok) throw new Error('設定を取得できませんでした。');
+        return response.json() as Promise<AppConfig>;
+      })
+      .then((config) => {
+        setAppConfig({
+          resourceName: config.resourceName || DEFAULT_APP_CONFIG.resourceName,
+          reservationMonthsAhead: Number.isInteger(config.reservationMonthsAhead) && config.reservationMonthsAhead > 0
+            ? config.reservationMonthsAhead
+            : DEFAULT_APP_CONFIG.reservationMonthsAhead,
+          maxSlotsPerRequest: Number.isInteger(config.maxSlotsPerRequest) && config.maxSlotsPerRequest > 0
+            ? config.maxSlotsPerRequest
+            : DEFAULT_APP_CONFIG.maxSlotsPerRequest
+        });
+      })
+      .catch((error) => setMessage(error instanceof Error ? error.message : '設定を取得できませんでした。'));
+  }, []);
+
+  useEffect(() => {
+    document.title = `${appConfig.resourceName}予約`;
+  }, [appConfig.resourceName]);
+
+  useEffect(() => {
+    if (monthOffset > appConfig.reservationMonthsAhead) {
+      setMonthOffset(appConfig.reservationMonthsAhead);
+    }
+  }, [appConfig.reservationMonthsAhead, monthOffset]);
 
   useEffect(() => {
     return onAuthStateChanged(auth, (user) => {
@@ -319,8 +359,8 @@ function App() {
       setSelectedSlots((slots) => slots.filter((item) => slotKey(item) !== key));
       return;
     }
-    if (selectedSlots.length >= 50) {
-      setMessage('一度に選択できるのは50コマまでです。');
+    if (selectedSlots.length >= appConfig.maxSlotsPerRequest) {
+      setMessage(`一度に選択できるのは${appConfig.maxSlotsPerRequest}コマまでです。`);
       return;
     }
     setSelectedSlots((slots) => [...slots, slot].sort((a, b) => slotKey(a).localeCompare(slotKey(b))));
@@ -554,14 +594,14 @@ function App() {
           <h2>{currentMonth.getFullYear()}年 {currentMonth.getMonth() + 1}月</h2>
           <button
             className="secondary-button"
-            disabled={monthOffset >= MAX_MONTH_OFFSET}
+            disabled={monthOffset >= appConfig.reservationMonthsAhead}
             onClick={() => setMonthOffset((v) => v + 1)}
           >
             次月
             <ChevronRight size={18} />
           </button>
         </div>
-        {printMode && <h2 className="print-title">{currentMonth.getFullYear()}年 {currentMonth.getMonth() + 1}月 会議室予約</h2>}
+        {printMode && <h2 className="print-title">{currentMonth.getFullYear()}年 {currentMonth.getMonth() + 1}月 {appConfig.resourceName}予約</h2>}
         <div className="weekday-row">
           {['日', '月', '火', '水', '木', '金', '土'].map((day) => (
             <span key={day}>{day}</span>
@@ -676,7 +716,7 @@ function App() {
       <main className="login-screen">
         <section className="login-panel">
           <CalendarDays size={44} aria-hidden />
-          <h1>会議室予約</h1>
+          <h1>{appConfig.resourceName}予約</h1>
           {message && <div className="notice">{message}</div>}
           <button className="primary-button" onClick={login}>
             <LogIn size={18} />
@@ -691,7 +731,7 @@ function App() {
     <main className="app-shell">
       <header className="topbar no-print">
         <div>
-          <h1>{isAdminPath ? '管理者画面' : '会議室予約'}</h1>
+          <h1>{isAdminPath ? '管理者画面' : `${appConfig.resourceName}予約`}</h1>
           <p>{firebaseUser.email}</p>
         </div>
         <nav className="top-actions">
@@ -856,7 +896,7 @@ function App() {
               <h2>申込内容</h2>
               <div className="selection-summary">
                 <strong>{selectedSlots.length}</strong>
-                <span>/ 50 コマ選択中</span>
+                <span>/ {appConfig.maxSlotsPerRequest} コマ選択中</span>
               </div>
               <div className="selected-slots">
                 {selectedSlots.map((slot) => (

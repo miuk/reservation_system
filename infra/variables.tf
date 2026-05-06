@@ -75,6 +75,34 @@ variable "admin_emails" {
   type        = string
 }
 
+variable "resource_name" {
+  description = "Reservation target name shown in the UI."
+  type        = string
+  default     = "会議室"
+}
+
+variable "reservation_months_ahead" {
+  description = "How many months ahead reservations can be created."
+  type        = number
+  default     = 6
+
+  validation {
+    condition     = var.reservation_months_ahead >= 1 && floor(var.reservation_months_ahead) == var.reservation_months_ahead
+    error_message = "reservation_months_ahead must be a positive integer."
+  }
+}
+
+variable "max_slots_per_request" {
+  description = "Maximum number of slots that can be reserved in one request."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.max_slots_per_request >= 1 && floor(var.max_slots_per_request) == var.max_slots_per_request
+    error_message = "max_slots_per_request must be a positive integer."
+  }
+}
+
 variable "frontend_origin" {
   description = "Allowed frontend origin for backend CORS. Set this to the frontend Cloud Run URL after it is known."
   type        = string

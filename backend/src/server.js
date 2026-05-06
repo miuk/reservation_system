@@ -11,7 +11,16 @@ const PERIOD_LABELS = {
   afternoon: '午後',
   night: '夜'
 };
-const MAX_SLOTS_PER_REQUEST = 50;
+
+function positiveIntegerEnv(name, defaultValue) {
+  const value = process.env[name];
+  if (!value) return defaultValue;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+  return parsed;
+}
 
 const env = {
   port: Number(process.env.PORT || 8080),
@@ -19,6 +28,9 @@ const env = {
   projectId: process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
   firestoreProjectId: process.env.FIRESTORE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || '',
   databaseId: process.env.FIRESTORE_DATABASE_ID || '(default)',
+  resourceName: process.env.RESOURCE_NAME || '会議室',
+  reservationMonthsAhead: positiveIntegerEnv('RESERVATION_MONTHS_AHEAD', 6),
+  maxSlotsPerRequest: positiveIntegerEnv('MAX_SLOTS_PER_REQUEST', 50),
   adminEmails: new Set(
     (process.env.ADMIN_EMAILS || '')
       .split(',')
@@ -60,7 +72,7 @@ const slotSchema = z.object({
 });
 
 const reservationSchema = z.object({
-  slots: z.array(slotSchema).min(1).max(MAX_SLOTS_PER_REQUEST),
+  slots: z.array(slotSchema).min(1).max(env.maxSlotsPerRequest),
   groupName: z.string().trim().min(1).max(120),
   representative: z.object({
     name: z.string().trim().min(1).max(120),
@@ -175,7 +187,7 @@ function normalizeSlots(slots) {
 
 function validateReservationWindow(slots) {
   const start = todayUtc();
-  const end = addMonths(start, 6);
+  const end = addMonths(start, env.reservationMonthsAhead);
   for (const slot of slots) {
     const target = dateOnly(slot.date);
     if (Number.isNaN(target.getTime()) || target < start || target > end) {
@@ -381,6 +393,14 @@ async function deleteReservationDocs(docs) {
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get('/api/config', (_req, res) => {
+  res.json({
+    resourceName: env.resourceName,
+    reservationMonthsAhead: env.reservationMonthsAhead,
+    maxSlotsPerRequest: env.maxSlotsPerRequest
+  });
 });
 
 app.get('/api/me', authenticate, (req, res) => {
@@ -715,6 +735,9 @@ app.listen(env.port, () => {
   console.log('backend runtime config:', {
     firebaseProjectId: env.projectId,
     firestoreProjectId: env.firestoreProjectId,
-    firestoreDatabaseId: env.databaseId
+    firestoreDatabaseId: env.databaseId,
+    resourceName: env.resourceName,
+    reservationMonthsAhead: env.reservationMonthsAhead,
+    maxSlotsPerRequest: env.maxSlotsPerRequest
   });
 });

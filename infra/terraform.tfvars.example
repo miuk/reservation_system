@@ -12,6 +12,9 @@ cloud_build_service_account_email = "your-cloud-build-service-account@your-cloud
 
 admin_emails = "admin@example.com"
 frontend_origin = "https://your-frontend-service-url"
+resource_name = "会議室"
+reservation_months_ahead = 6
+max_slots_per_request = 50
 
 firebase_web_api_key = "your-firebase-web-api-key"
 firebase_web_app_id  = "your-firebase-web-app-id"

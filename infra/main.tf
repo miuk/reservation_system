@@ -103,6 +103,18 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "ADMIN_EMAILS"
         value = var.admin_emails
       }
+      env {
+        name  = "RESOURCE_NAME"
+        value = var.resource_name
+      }
+      env {
+        name  = "RESERVATION_MONTHS_AHEAD"
+        value = tostring(var.reservation_months_ahead)
+      }
+      env {
+        name  = "MAX_SLOTS_PER_REQUEST"
+        value = tostring(var.max_slots_per_request)
+      }
     }
   }
 
@@ -190,14 +202,17 @@ resource "google_cloudbuild_trigger" "backend" {
   }
 
   substitutions = {
-    _REGION                = var.region
-    _SERVICE_NAME          = var.backend_service_name
-    _FIREBASE_PROJECT_ID   = var.firebase_project_id
-    _FIRESTORE_PROJECT_ID  = var.firestore_project_id
-    _FIRESTORE_DATABASE_ID = var.firestore_database_id
-    _FRONTEND_ORIGIN       = var.frontend_origin
-    _ADMIN_EMAILS          = var.admin_emails
-    _SERVICE_ACCOUNT       = local.backend_service_account_email
+    _REGION                   = var.region
+    _SERVICE_NAME             = var.backend_service_name
+    _FIREBASE_PROJECT_ID      = var.firebase_project_id
+    _FIRESTORE_PROJECT_ID     = var.firestore_project_id
+    _FIRESTORE_DATABASE_ID    = var.firestore_database_id
+    _FRONTEND_ORIGIN          = var.frontend_origin
+    _ADMIN_EMAILS             = var.admin_emails
+    _RESOURCE_NAME            = var.resource_name
+    _RESERVATION_MONTHS_AHEAD = tostring(var.reservation_months_ahead)
+    _MAX_SLOTS_PER_REQUEST    = tostring(var.max_slots_per_request)
+    _SERVICE_ACCOUNT          = local.backend_service_account_email
   }
 
   depends_on = [

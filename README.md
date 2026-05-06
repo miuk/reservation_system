@@ -83,7 +83,7 @@ backend:
 ```sh
 gcloud builds submit backend \
   --config=backend/cloudbuild.yaml \
-  --substitutions=_REGION=asia-northeast1,_SERVICE_NAME=reservation-backend,_FIREBASE_PROJECT_ID=your-firebase-project-id,_FIRESTORE_PROJECT_ID=your-firestore-project-id,_ADMIN_EMAILS=admin@example.com,_SERVICE_ACCOUNT=backend-sa@PROJECT_ID.iam.gserviceaccount.com
+  --substitutions=_REGION=asia-northeast1,_SERVICE_NAME=reservation-backend,_FIREBASE_PROJECT_ID=your-firebase-project-id,_FIRESTORE_PROJECT_ID=your-firestore-project-id,_ADMIN_EMAILS=admin@example.com,_RESOURCE_NAME=会議室,_RESERVATION_MONTHS_AHEAD=6,_MAX_SLOTS_PER_REQUEST=50,_SERVICE_ACCOUNT=backend-sa@PROJECT_ID.iam.gserviceaccount.com
 ```
 
 frontend:
@@ -209,7 +209,7 @@ gcloud builds triggers create github \
   --build-config=backend/cloudbuild.trigger.yaml \
   --service-account=projects/$PROJECT_ID/serviceAccounts/$BUILD_SA \
   --included-files='backend/**' \
-  --substitutions=_REGION=$REGION,_SERVICE_NAME=reservation-backend,_FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID,_FIRESTORE_PROJECT_ID=$FIREBASE_PROJECT_ID,_FRONTEND_ORIGIN=$FRONTEND_URL,_ADMIN_EMAILS=admin@example.com,_SERVICE_ACCOUNT=$BACKEND_RUN_SA
+  --substitutions=_REGION=$REGION,_SERVICE_NAME=reservation-backend,_FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID,_FIRESTORE_PROJECT_ID=$FIREBASE_PROJECT_ID,_FRONTEND_ORIGIN=$FRONTEND_URL,_ADMIN_EMAILS=admin@example.com,_RESOURCE_NAME=会議室,_RESERVATION_MONTHS_AHEAD=6,_MAX_SLOTS_PER_REQUEST=50,_SERVICE_ACCOUNT=$BACKEND_RUN_SA
 ```
 
 frontend trigger:
@@ -331,4 +331,7 @@ frontend URL が確定した後、`frontend_origin` をその URL に更新し�
 `backend/.env` の `FIREBASE_PROJECT_ID` には `frontend/.env.local` の `VITE_FIREBASE_PROJECT_ID` と同じ値を指定してください。
 `FIRESTORE_PROJECT_ID` には Firestore database がある Google Cloud/Firebase project ID を指定してください。Firebase Auth と Firestore が同じ project なら同じ値で構いません。
 `ADMIN_EMAILS` にはカンマ区切りで初期管理者の Google アカウント email を指定します。
+`RESOURCE_NAME` には画面に表示する予約対象名を指定します。未指定時は `会議室` です。
+`RESERVATION_MONTHS_AHEAD` には何か月後まで予約可能にするかを正の整数で指定します。未指定時は `6` です。
+`MAX_SLOTS_PER_REQUEST` には一度に予約可能なコマ数を正の整数で指定します。未指定時は `50` です。
 初期管理者は `allowedUsers` 未登録でもログインでき、管理者画面から利用者を追加できます。
