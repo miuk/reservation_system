@@ -315,6 +315,31 @@ textarea {
   color: #49524f;
 }
 
+.reservation-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 14px;
+  margin: 12px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid #e4e7e2;
+}
+
+.reservation-meta div {
+  min-width: 0;
+}
+
+.reservation-meta dt {
+  margin: 0 0 3px;
+  color: #68716d;
+  font-size: 0.78rem;
+}
+
+.reservation-meta dd {
+  margin: 0;
+  color: #27322f;
+  overflow-wrap: anywhere;
+}
+
 .status {
   display: inline-flex;
   align-items: center;

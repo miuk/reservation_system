@@ -34,6 +34,7 @@ type OccupiedSlot = Slot & {
   groupName?: string;
 };
 type ApiUser = { uid: string; email: string; name: string; role: 'user' | 'admin'; isAdmin: boolean };
+type ReservationActor = { uid?: string; email?: string; name?: string; role?: string; isAdmin?: boolean };
 type Reservation = {
   id: string;
   slots: Slot[];
@@ -45,6 +46,10 @@ type Reservation = {
   purpose: string;
   notes?: string;
   createdAt: string | null;
+  approvedAt: string | null;
+  cancelledAt: string | null;
+  approvedBy?: ReservationActor | null;
+  cancelledBy?: ReservationActor | null;
 };
 type AllowedUser = {
   id: string;
@@ -146,6 +151,22 @@ function statusLabel(status: ReservationStatus) {
 
 function slotLabel(slot: Slot) {
   return `${slot.date} ${PERIODS.find((period) => period.id === slot.period)?.label || slot.period}`;
+}
+
+function dateTimeLabel(value: string | null | undefined) {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(new Date(value));
+}
+
+function actorLabel(actor: ReservationActor | null | undefined) {
+  if (!actor) return '-';
+  return actor.name || actor.email || '-';
 }
 
 function App() {
@@ -495,6 +516,28 @@ function App() {
               <p>{reservation.secondaryRepresentative.name || '代表者2'} / {reservation.secondaryRepresentative.phone || '-'} / {reservation.secondaryRepresentative.email}</p>
             )}
             <p>{reservation.purpose}</p>
+            <dl className="reservation-meta">
+              <div>
+                <dt>申込日時</dt>
+                <dd>{dateTimeLabel(reservation.createdAt)}</dd>
+              </div>
+              <div>
+                <dt>予約確定日時</dt>
+                <dd>{dateTimeLabel(reservation.approvedAt)}</dd>
+              </div>
+              <div>
+                <dt>取消日時</dt>
+                <dd>{dateTimeLabel(reservation.cancelledAt)}</dd>
+              </div>
+              <div>
+                <dt>予約確定管理者</dt>
+                <dd>{actorLabel(reservation.approvedBy)}</dd>
+              </div>
+              <div>
+                <dt>取消管理者</dt>
+                <dd>{actorLabel(reservation.cancelledBy)}</dd>
+              </div>
+            </dl>
             {admin && reservation.status !== 'cancelled' && (
               <div className="admin-actions">
                 <div>
