@@ -241,6 +241,7 @@ function App() {
         setReservations([]);
         setAllowedUsers([]);
         setSelectedSlots([]);
+        setMessage('');
       }
     });
   }, []);
@@ -270,6 +271,8 @@ function App() {
   }
 
   async function logout() {
+    setMessage('');
+    setSelectedSlots([]);
     await signOut(auth);
   }
 
