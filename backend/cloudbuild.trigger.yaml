@@ -8,6 +8,9 @@ substitutions:
   _ADMIN_EMAILS: admin@example.com
   _SERVICE_ACCOUNT: ""
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
   - name: gcr.io/cloud-builders/docker
     dir: backend

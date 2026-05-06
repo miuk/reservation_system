@@ -9,6 +9,9 @@ substitutions:
   _VITE_FIREBASE_APP_ID: ""
   _SERVICE_ACCOUNT: ""
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
   - name: gcr.io/cloud-builders/docker
     dir: frontend

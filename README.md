@@ -250,6 +250,8 @@ gcloud builds triggers run reservation-frontend-main \
 
 Cloud Build 公式ドキュメントでは、GitHub trigger は `gcloud builds triggers create github` で作成し、trigger に指定した service account が trigger から起動される build に使われます。`--included-files` を指定すると、該当パスの変更時だけ trigger が起動します。
 
+trigger で service account を指定する場合、Cloud Build はログ出力先の明示設定を要求します。このリポジトリの Cloud Build 設定では `options.logging: CLOUD_LOGGING_ONLY` を指定し、Cloud Logging のみにログを出します。
+
 ## Firestore データ
 
 - `reservations/{reservationId}`: 申込単位
