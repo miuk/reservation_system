@@ -103,8 +103,8 @@ backend は `--no-allow-unauthenticated` でデプロイされます。frontend 
 以下の例では、Cloud Run をデプロイする Google Cloud project を `CLOUD_RUN_PROJECT_ID`、Firebase Auth/Firestore がある project を `FIREBASE_PROJECT_ID` としています。同じ project の場合は同じ値を指定してください。
 
 ```sh
-CLOUD_RUN_PROJECT_ID=reservation-system-494801
-FIREBASE_PROJECT_ID=reservation-system-5aa43
+CLOUD_RUN_PROJECT_ID=your-cloud-run-project-id
+FIREBASE_PROJECT_ID=your-firebase-project-id
 REGION=asia-northeast1
 
 PROJECT_NUMBER=$(gcloud projects describe $CLOUD_RUN_PROJECT_ID --format='value(projectNumber)')
@@ -183,16 +183,17 @@ gcloud run services get-iam-policy reservation-frontend \
 GitHub 連携済みのリポジトリに対して、backend/frontend の trigger を分けて作成します。trigger ではリポジトリ全体が checkout されるため、`cloudbuild.trigger.yaml` を使います。
 
 ```sh
-PROJECT_ID=reservation-system-494801
+PROJECT_ID=your-cloud-run-project-id
 REGION=asia-northeast1
 GITHUB_OWNER=your-github-owner
 GITHUB_REPO=reservation_system
-BUILD_SA=141960969945-compute@developer.gserviceaccount.com
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+BUILD_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 BACKEND_RUN_SA=backend-sa@${PROJECT_ID}.iam.gserviceaccount.com
 FRONTEND_RUN_SA=frontend-sa@${PROJECT_ID}.iam.gserviceaccount.com
-FIREBASE_PROJECT_ID=reservation-system-5aa43
-BACKEND_URL=https://reservation-backend-bfz7voz6dq-an.a.run.app
-FRONTEND_URL=https://reservation-frontend-bfz7voz6dq-an.a.run.app
+FIREBASE_PROJECT_ID=your-firebase-project-id
+BACKEND_URL=https://your-backend-service-url
+FRONTEND_URL=https://your-frontend-service-url
 ```
 
 backend trigger:
