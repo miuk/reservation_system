@@ -1,0 +1,20 @@
+cloud_run_project_id = "your-cloud-run-project-id"
+firebase_project_id  = "your-firebase-project-id"
+firestore_project_id = "your-firebase-project-id"
+region               = "asia-northeast1"
+
+github_owner = "your-github-owner"
+github_repo  = "reservation_system"
+
+# For the default compute service account:
+# PROJECT_NUMBER-compute@developer.gserviceaccount.com
+cloud_build_service_account_email = "your-cloud-build-service-account@your-cloud-run-project-id.iam.gserviceaccount.com"
+
+admin_emails = "admin@example.com"
+frontend_origin = "https://your-frontend-service-url"
+
+firebase_web_api_key = "your-firebase-web-api-key"
+firebase_web_app_id  = "your-firebase-web-app-id"
+
+# Optional. Defaults to "${firebase_project_id}.firebaseapp.com".
+firebase_auth_domain = "your-firebase-project-id.firebaseapp.com"

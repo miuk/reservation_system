@@ -252,6 +252,72 @@ Cloud Build 公式ドキュメントでは、GitHub trigger は `gcloud builds t
 
 trigger で service account を指定する場合、Cloud Build はログ出力先の明示設定を要求します。このリポジトリの Cloud Build 設定では `options.logging: CLOUD_LOGGING_ONLY` を指定し、Cloud Logging のみにログを出します。
 
+### Terraform
+
+Cloud Run / Cloud Build / IAM / Artifact Registry は `infra/` の Terraform でも管理できます。Firebase Authentication の Google ログイン有効化や Authorized domains など、Firebase Console 側の一部設定は手動で行ってください。
+
+まず設定ファイルを作成します。実値を含む `terraform.tfvars` は `.gitignore` 対象です。
+
+```sh
+cp infra/terraform.tfvars.example infra/terraform.tfvars
+```
+
+`infra/terraform.tfvars` を編集します。
+
+```hcl
+cloud_run_project_id = "your-cloud-run-project-id"
+firebase_project_id  = "your-firebase-project-id"
+firestore_project_id = "your-firebase-project-id"
+region               = "asia-northeast1"
+
+github_owner = "your-github-owner"
+github_repo  = "reservation_system"
+
+cloud_build_service_account_email = "PROJECT_NUMBER-compute@developer.gserviceaccount.com"
+
+admin_emails = "admin@example.com"
+frontend_origin = "https://your-frontend-service-url"
+
+firebase_web_api_key = "your-firebase-web-api-key"
+firebase_web_app_id  = "your-firebase-web-app-id"
+firebase_auth_domain = "your-firebase-project-id.firebaseapp.com"
+```
+
+適用します。
+
+```sh
+cd infra
+terraform init
+terraform plan
+terraform apply
+```
+
+すでに手動作成済みの Cloud Run service、Artifact Registry repository、Cloud Build trigger、service account を Terraform 管理に移す場合は、`terraform apply` の前に `terraform import` が必要です。import せずに同名リソースを作ろうとすると、既存リソースとの重複で失敗します。
+
+Terraform が作成する主なリソース:
+
+- Artifact Registry repository
+- frontend/backend の Cloud Run runtime service account
+- Cloud Run frontend/backend service
+- Cloud Run IAM
+- Cloud Build trigger
+- Cloud Build 実行 service account に必要な IAM
+- backend runtime service account の Firestore 権限
+
+Cloud Run service は Terraform 初回作成時に placeholder image で作成されます。`terraform apply` 後に trigger を手動実行し、実アプリ image に更新してください。
+
+```sh
+gcloud builds triggers run reservation-backend-main \
+  --region=asia-northeast1 \
+  --branch=main
+
+gcloud builds triggers run reservation-frontend-main \
+  --region=asia-northeast1 \
+  --branch=main
+```
+
+frontend URL が確定した後、`frontend_origin` をその URL に更新して再度 `terraform apply` してください。
+
 ## Firestore データ
 
 - `reservations/{reservationId}`: 申込単位
