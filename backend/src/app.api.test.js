@@ -212,6 +212,24 @@ async function seedReservation(db, id, overrides = {}) {
   return reservation;
 }
 
+function importReservation(overrides = {}) {
+  return {
+    id: 'imported-reservation',
+    slots: [{ date: '2026-05-12', period: 'morning' }],
+    status: 'pending',
+    groupName: 'インポート団体',
+    representative: { name: '代表者', phone: '090-1111-1111', email: 'import@example.com' },
+    expectedAttendees: 12,
+    purpose: '練習',
+    notes: '',
+    createdAt: '2026-05-09T10:30:00.000Z',
+    updatedAt: '2026-05-09T10:30:00.000Z',
+    approvedAt: null,
+    cancelledAt: null,
+    ...overrides
+  };
+}
+
 function request(app, method, url, { body, headers } = {}) {
   return new Promise((resolve, reject) => {
     const req = httpMocks.createRequest({
@@ -501,5 +519,152 @@ describe('app API', () => {
       status: 'cancelled'
     });
     expect(db.collection('reservationSlots').items.has('2026-05-10_morning')).toBe(false);
+  });
+
+  it('exports all reservations for admins', async () => {
+    await seedReservation(db, 'reservation-1', { groupName: 'エクスポート対象' });
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const response = await request(app, 'GET', '/api/admin/reservations/export', {
+      headers: authHeaders()
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ version: 1 });
+    expect(response.body.exportedAt).toEqual(expect.any(String));
+    expect(response.body.reservations).toHaveLength(1);
+    expect(response.body.reservations[0]).toMatchObject({
+      id: 'reservation-1',
+      groupName: 'エクスポート対象'
+    });
+  });
+
+  it('imports reservations in merge mode and writes occupied slots', async () => {
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const response = await request(app, 'POST', '/api/admin/reservations/import', {
+      headers: authHeaders(),
+      body: {
+        mode: 'merge',
+        reservations: [importReservation()]
+      }
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ imported: 1, mode: 'merge' });
+    expect(db.collection('reservations').items.get('imported-reservation')).toMatchObject({
+      groupName: 'インポート団体',
+      slots: [{ date: '2026-05-12', period: 'morning' }]
+    });
+    expect(db.collection('reservationSlots').items.get('2026-05-12_morning')).toMatchObject({
+      groupName: 'インポート団体',
+      reservationId: 'imported-reservation',
+      status: 'pending'
+    });
+  });
+
+  it('rejects import data with duplicate slots or existing slot conflicts', async () => {
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const duplicate = await request(app, 'POST', '/api/admin/reservations/import', {
+      headers: authHeaders(),
+      body: {
+        mode: 'merge',
+        reservations: [
+          importReservation({
+            slots: [
+              { date: '2026-05-12', period: 'morning' },
+              { date: '2026-05-12', period: 'morning' }
+            ]
+          })
+        ]
+      }
+    });
+    expect(duplicate.status).toBe(400);
+    expect(duplicate.body.error).toBe('インポートデータに同一予約内の重複コマがあります。');
+
+    await db.collection('reservationSlots').doc('2026-05-12_morning').set({
+      reservationId: 'existing-reservation',
+      status: 'pending'
+    });
+    const conflict = await request(app, 'POST', '/api/admin/reservations/import', {
+      headers: authHeaders(),
+      body: {
+        mode: 'merge',
+        reservations: [importReservation()]
+      }
+    });
+    expect(conflict.status).toBe(409);
+    expect(conflict.body.error).toBe('既存予約と競合するコマがあります: 2026-05-12_morning');
+  });
+
+  it('replaces existing reservation data when importing in replace mode', async () => {
+    await seedReservation(db, 'old-reservation');
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const response = await request(app, 'POST', '/api/admin/reservations/import', {
+      headers: authHeaders(),
+      body: {
+        mode: 'replace',
+        reservations: [importReservation()]
+      }
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ imported: 1, mode: 'replace' });
+    expect(db.collection('reservations').items.has('old-reservation')).toBe(false);
+    expect(db.collection('reservationSlots').items.has('2026-05-10_morning')).toBe(false);
+    expect(db.collection('reservations').items.has('imported-reservation')).toBe(true);
+    expect(db.collection('reservationSlots').items.has('2026-05-12_morning')).toBe(true);
+  });
+
+  it('deletes reservations whose all slots are before the cutoff date', async () => {
+    await seedReservation(db, 'old-reservation', {
+      slots: [{ date: '2026-05-01', period: 'morning' }]
+    });
+    await seedReservation(db, 'mixed-reservation', {
+      slots: [
+        { date: '2026-05-01', period: 'afternoon' },
+        { date: '2026-05-20', period: 'night' }
+      ]
+    });
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const response = await request(app, 'POST', '/api/admin/reservations/delete', {
+      headers: authHeaders(),
+      body: {
+        mode: 'before',
+        cutoffDate: '2026-05-10',
+        confirm: 'DELETE_RESERVATIONS_BEFORE_DATE'
+      }
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ deleted: 1, mode: 'before', cutoffDate: '2026-05-10' });
+    expect(db.collection('reservations').items.has('old-reservation')).toBe(false);
+    expect(db.collection('reservationSlots').items.has('2026-05-01_morning')).toBe(false);
+    expect(db.collection('reservations').items.has('mixed-reservation')).toBe(true);
+    expect(db.collection('reservationSlots').items.has('2026-05-20_night')).toBe(true);
+  });
+
+  it('deletes all reservation data with the explicit confirmation token', async () => {
+    await seedReservation(db, 'reservation-1');
+    await seedReservation(db, 'reservation-2', {
+      slots: [{ date: '2026-05-11', period: 'afternoon' }]
+    });
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const response = await request(app, 'POST', '/api/admin/reservations/delete', {
+      headers: authHeaders(),
+      body: {
+        mode: 'all',
+        confirm: 'DELETE_ALL_RESERVATIONS'
+      }
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ deleted: 'all', mode: 'all' });
+    expect(db.collection('reservations').items.size).toBe(0);
+    expect(db.collection('reservationSlots').items.size).toBe(0);
   });
 });
