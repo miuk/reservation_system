@@ -36,6 +36,16 @@ npm run dev --workspace backend
 npm run dev --workspace frontend
 ```
 
+## 検証
+
+```sh
+npm run build
+npm run lint
+npm run test
+```
+
+`npm run test` は frontend/backend 両方の Vitest テストを実行します。
+
 ## Docker
 
 ```sh
