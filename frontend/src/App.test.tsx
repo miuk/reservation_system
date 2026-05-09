@@ -57,6 +57,7 @@ type FetchMockOptions = {
 function installFetchMock(options: FetchMockOptions = {}) {
   const posts: unknown[] = [];
   const adminActions: Array<{ url: string; method: string }> = [];
+  const dataActions: Array<{ url: string; method: string; body?: unknown }> = [];
   const userPosts: unknown[] = [];
   const config = options.config || { resourceName: '会議室', reservationMonthsAhead: 6, maxSlotsPerRequest: 3 };
   const isAdmin = options.admin || false;
@@ -100,6 +101,27 @@ function installFetchMock(options: FetchMockOptions = {}) {
       }
       return jsonResponse({ users });
     }
+    if (url === '/api/admin/reservations/export') {
+      dataActions.push({ url, method: init?.method || 'GET' });
+      return jsonResponse({
+        version: 1,
+        exportedAt: '2026-05-09T00:00:00.000Z',
+        reservations: [pendingReservation]
+      });
+    }
+    if (url === '/api/admin/reservations/import') {
+      dataActions.push({ url, method: init?.method || 'GET', body: JSON.parse(String(init?.body)) });
+      return jsonResponse({ imported: 1, mode: (JSON.parse(String(init?.body)) as { mode: string }).mode });
+    }
+    if (url === '/api/admin/reservations/delete') {
+      dataActions.push({ url, method: init?.method || 'GET', body: JSON.parse(String(init?.body)) });
+      const body = JSON.parse(String(init?.body)) as { cutoffDate?: string; mode: string };
+      return jsonResponse(
+        body.mode === 'before'
+          ? { deleted: 2, mode: 'before', cutoffDate: body.cutoffDate }
+          : { deleted: 'all', mode: 'all' }
+      );
+    }
     if (url.startsWith('/api/admin/users/')) {
       adminActions.push({ url, method: init?.method || 'GET' });
       return jsonResponse({ user: { id: 'user-1' } });
@@ -118,7 +140,7 @@ function installFetchMock(options: FetchMockOptions = {}) {
     throw new Error(`Unhandled fetch: ${url}`);
   });
   vi.stubGlobal('fetch', fetchMock);
-  return { adminActions, fetchMock, posts, userPosts };
+  return { adminActions, dataActions, fetchMock, posts, userPosts };
 }
 
 function loginAsUser() {
@@ -157,6 +179,11 @@ describe('App', () => {
     firebaseMocks.onAuthStateChanged.mockClear();
     firebaseMocks.signInWithPopup.mockClear();
     firebaseMocks.signOut.mockClear();
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:reservation-export'),
+      revokeObjectURL: vi.fn()
+    });
     installFetchMock();
   });
 
@@ -322,6 +349,129 @@ describe('App', () => {
       role: 'admin',
       active: true
     });
+  });
+
+  it('exports reservation data from the admin data tab', async () => {
+    window.history.replaceState({}, '', '/admin');
+    loginAsAdmin();
+    const { dataActions } = installFetchMock({ admin: true });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '管理者画面' });
+    await user.click(screen.getByRole('button', { name: 'データ' }));
+    expect(await screen.findByRole('heading', { name: '予約データ' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /エクスポート/ }));
+
+    await waitFor(() =>
+      expect(dataActions).toContainEqual({
+        url: '/api/admin/reservations/export',
+        method: 'GET'
+      })
+    );
+    expect(URL.createObjectURL).toHaveBeenCalled();
+    expect(clickSpy).toHaveBeenCalled();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:reservation-export');
+    expect(await screen.findByText('予約データをエクスポートしました。')).toBeInTheDocument();
+  });
+
+  it('imports reservation JSON from the admin data tab', async () => {
+    window.history.replaceState({}, '', '/admin');
+    loginAsAdmin();
+    const { dataActions } = installFetchMock({ admin: true });
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '管理者画面' });
+    await user.click(screen.getByRole('button', { name: 'データ' }));
+    const fileInput = document.querySelector('input[name="reservationImportFile"]') as HTMLInputElement;
+    const file = new File([JSON.stringify({ reservations: [pendingReservation] })], 'reservations.json', {
+      type: 'application/json'
+    });
+
+    await user.upload(fileInput, file);
+    await user.click(screen.getByRole('button', { name: /インポート/ }));
+
+    await waitFor(() =>
+      expect(dataActions).toContainEqual({
+        url: '/api/admin/reservations/import',
+        method: 'POST',
+        body: { mode: 'merge', reservations: [pendingReservation] }
+      })
+    );
+    expect(await screen.findByText('予約データを1件インポートしました。')).toBeInTheDocument();
+  });
+
+  it('requires confirmation before replace import and skips the API when cancelled', async () => {
+    window.history.replaceState({}, '', '/admin');
+    loginAsAdmin();
+    const { dataActions } = installFetchMock({ admin: true });
+    vi.mocked(window.confirm).mockReturnValue(false);
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '管理者画面' });
+    await user.click(screen.getByRole('button', { name: 'データ' }));
+    await user.selectOptions(screen.getByRole('combobox'), 'replace');
+    const fileInput = document.querySelector('input[name="reservationImportFile"]') as HTMLInputElement;
+    await user.upload(
+      fileInput,
+      new File([JSON.stringify([pendingReservation])], 'reservations.json', { type: 'application/json' })
+    );
+    await user.click(screen.getByRole('button', { name: /インポート/ }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      '既存の予約データをすべて削除して、選択したJSONの内容に置き換えます。実行しますか？'
+    );
+    expect(dataActions).not.toContainEqual(
+      expect.objectContaining({
+        url: '/api/admin/reservations/import'
+      })
+    );
+  });
+
+  it('deletes reservation data from the admin data tab after confirmation', async () => {
+    window.history.replaceState({}, '', '/admin');
+    loginAsAdmin();
+    const { dataActions } = installFetchMock({ admin: true });
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: '管理者画面' });
+    await user.click(screen.getByRole('button', { name: 'データ' }));
+    const cutoffInput = document.querySelector('input[type="date"]') as HTMLInputElement;
+    await user.type(cutoffInput, '2026-05-10');
+    await user.click(screen.getByRole('button', { name: /^消去$/ }));
+
+    await waitFor(() =>
+      expect(dataActions).toContainEqual({
+        url: '/api/admin/reservations/delete',
+        method: 'POST',
+        body: {
+          mode: 'before',
+          cutoffDate: '2026-05-10',
+          confirm: 'DELETE_RESERVATIONS_BEFORE_DATE'
+        }
+      })
+    );
+    expect(window.confirm).toHaveBeenCalledWith('2026-05-10 以前の予約データを削除します。実行しますか？');
+    expect(await screen.findByText('2026-05-10 以前の予約データを2件削除しました。')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /全消去/ }));
+    await waitFor(() =>
+      expect(dataActions).toContainEqual({
+        url: '/api/admin/reservations/delete',
+        method: 'POST',
+        body: { mode: 'all', confirm: 'DELETE_ALL_RESERVATIONS' }
+      })
+    );
+    expect(window.confirm).toHaveBeenCalledWith('すべての予約データを削除します。実行しますか？');
+    expect(await screen.findByText('すべての予約データを削除しました。')).toBeInTheDocument();
   });
 
   it('blocks the admin screen for a signed-in non-admin user', async () => {
