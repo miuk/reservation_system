@@ -436,7 +436,8 @@ export function App() {
 
   async function importReservations(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const fileInput = event.currentTarget.elements.namedItem('reservationImportFile') as HTMLInputElement | null;
+    const formElement = event.currentTarget;
+    const fileInput = formElement.elements.namedItem('reservationImportFile') as HTMLInputElement | null;
     const file = fileInput?.files?.[0];
     if (!file) {
       setMessage('インポートするJSONファイルを選択してください。');
@@ -458,7 +459,7 @@ export function App() {
         method: 'POST',
         body: JSON.stringify({ mode: importMode, reservations })
       });
-      event.currentTarget.reset();
+      formElement.reset();
       await refresh();
       setMessage(`予約データを${result.imported}件インポートしました。`);
     } catch (error) {
