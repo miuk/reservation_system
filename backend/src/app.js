@@ -570,14 +570,18 @@ app.post('/api/admin/reservations/import', authenticate, requireAdmin, async (re
   try {
     const parsed = reservationImportBodySchema.parse(Array.isArray(req.body) ? { reservations: req.body } : req.body);
     const now = new Date();
-    const reservations = parsed.reservations.map((reservation) => reservationDataForImport(reservation, now));
 
-    const seenSlots = new Map();
-    for (const reservation of reservations) {
+    for (const reservation of parsed.reservations) {
       if (reservation.slots.length !== normalizeSlots(reservation.slots).length) {
         res.status(400).json({ error: 'インポートデータに同一予約内の重複コマがあります。' });
         return;
       }
+    }
+
+    const reservations = parsed.reservations.map((reservation) => reservationDataForImport(reservation, now));
+
+    const seenSlots = new Map();
+    for (const reservation of reservations) {
       if (reservation.status === 'cancelled') continue;
       for (const slot of reservation.slots) {
         const key = slotId(slot);
