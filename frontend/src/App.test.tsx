@@ -44,6 +44,12 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 
 type FetchMockOptions = {
   admin?: boolean;
+  availabilitySlots?: unknown[];
+  config?: {
+    resourceName: string;
+    reservationMonthsAhead: number;
+    maxSlotsPerRequest: number;
+  };
   reservations?: unknown[];
   users?: unknown[];
 };
@@ -52,13 +58,24 @@ function installFetchMock(options: FetchMockOptions = {}) {
   const posts: unknown[] = [];
   const adminActions: Array<{ url: string; method: string }> = [];
   const userPosts: unknown[] = [];
+  const config = options.config || { resourceName: '会議室', reservationMonthsAhead: 6, maxSlotsPerRequest: 3 };
   const isAdmin = options.admin || false;
+  const availabilitySlots = options.availabilitySlots || [
+    {
+      id: '2026-05-10_morning',
+      date: '2026-05-10',
+      period: 'morning',
+      reservationId: 'reservation-1',
+      status: 'approved',
+      groupName: '既存予約'
+    }
+  ];
   const reservations = options.reservations || [];
   const users = options.users || [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === '/api/config') {
-      return jsonResponse({ resourceName: '会議室', reservationMonthsAhead: 6, maxSlotsPerRequest: 3 });
+      return jsonResponse(config);
     }
     if (url === '/api/me') {
       return jsonResponse({
@@ -73,16 +90,7 @@ function installFetchMock(options: FetchMockOptions = {}) {
     }
     if (url.startsWith('/api/availability')) {
       return jsonResponse({
-        slots: [
-          {
-            id: '2026-05-10_morning',
-            date: '2026-05-10',
-            period: 'morning',
-            reservationId: 'reservation-1',
-            status: 'approved',
-            groupName: '既存予約'
-          }
-        ]
+        slots: availabilitySlots
       });
     }
     if (url === '/api/admin/users') {
@@ -142,6 +150,8 @@ const pendingReservation = {
 
 describe('App', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-05-09T00:00:00+09:00'));
     window.history.replaceState({}, '', '/reservations');
     firebaseMocks.auth.currentUser = null;
     firebaseMocks.onAuthStateChanged.mockClear();
@@ -153,6 +163,7 @@ describe('App', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('shows the login screen when no Firebase user is present', async () => {
@@ -203,6 +214,50 @@ describe('App', () => {
     });
     expect((posts[0] as { slots: unknown[] }).slots).toHaveLength(1);
     expect(await screen.findByText('仮予約として申込を受け付けました。')).toBeInTheDocument();
+  });
+
+  it('does not allow selecting occupied or out-of-range slots', async () => {
+    loginAsUser();
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    const occupiedSlot = await screen.findByRole('button', { name: /既存予約/ });
+    expect(occupiedSlot).toBeDisabled();
+    await user.click(occupiedSlot);
+    expect(screen.getByText('/ 3 コマ選択中')).toBeInTheDocument();
+
+    const firstDayAfternoon = (await screen.findAllByRole('button', { name: '午後' }))[0];
+    expect(firstDayAfternoon).toBeDisabled();
+    await user.click(firstDayAfternoon);
+    expect(screen.getByText('/ 3 コマ選択中')).toBeInTheDocument();
+  });
+
+  it('shows a message when selecting more than the configured maximum slots', async () => {
+    loginAsUser();
+    installFetchMock({
+      availabilitySlots: [],
+      config: { resourceName: '会議室', reservationMonthsAhead: 6, maxSlotsPerRequest: 2 }
+    });
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await screen.findByText('user@example.com');
+    await screen.findByText('/ 2 コマ選択中');
+    const nextSelectableButton = () =>
+      screen
+        .getAllByRole('button', { name: /午前|午後|夜/ })
+        .find((button) => !(button as HTMLButtonElement).disabled && !button.classList.contains('selected'));
+
+    await user.click(nextSelectableButton()!);
+    await waitFor(() => expect(document.querySelectorAll('.selected-slot-row')).toHaveLength(1));
+    await user.click(nextSelectableButton()!);
+    await waitFor(() => expect(document.querySelectorAll('.selected-slot-row')).toHaveLength(2));
+    await user.click(nextSelectableButton()!);
+
+    expect(await screen.findByText('一度に選択できるのは2コマまでです。')).toBeInTheDocument();
+    expect(screen.getByText('/ 2 コマ選択中')).toBeInTheDocument();
   });
 
   it('shows the admin screen with reservation actions for an admin user', async () => {
