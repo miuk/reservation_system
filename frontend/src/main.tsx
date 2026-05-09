@@ -24,11 +24,23 @@ import {
   signInWithPopup,
   signOut
 } from 'firebase/auth';
+import {
+  PERIODS,
+  ReservationActor,
+  ReservationStatus,
+  Slot,
+  addMonths,
+  actorLabel,
+  dateTimeLabel,
+  isoDate,
+  monthDays,
+  printRangeDays,
+  slotKey,
+  slotLabel,
+  statusLabel
+} from './lib/reservationUtils';
 import './styles.css';
 
-type Period = 'morning' | 'afternoon' | 'night';
-type Slot = { date: string; period: Period };
-type ReservationStatus = 'pending' | 'approved' | 'cancelled';
 type OccupiedSlot = Slot & {
   id: string;
   reservationId: string;
@@ -36,7 +48,6 @@ type OccupiedSlot = Slot & {
   groupName?: string;
 };
 type ApiUser = { uid: string; email: string; name: string; role: 'user' | 'admin'; isAdmin: boolean };
-type ReservationActor = { uid?: string; email?: string; name?: string; role?: string; isAdmin?: boolean };
 type Reservation = {
   id: string;
   slots: Slot[];
@@ -67,11 +78,6 @@ type AppConfig = {
 };
 type AdminTab = 'reservations' | 'users' | 'print' | 'data';
 
-const PERIODS: Array<{ id: Period; label: string }> = [
-  { id: 'morning', label: '午前' },
-  { id: 'afternoon', label: '午後' },
-  { id: 'night', label: '夜' }
-];
 const MIN_MONTH_OFFSET = -6;
 const DEFAULT_APP_CONFIG: AppConfig = {
   resourceName: '会議室',
@@ -113,74 +119,7 @@ function authErrorMessage(error: unknown) {
   return message;
 }
 
-function isoDate(date: Date) {
-  const copy = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  return copy.toISOString().slice(0, 10);
-}
-
-function addMonths(date: Date, months: number) {
-  const copy = new Date(date.getFullYear(), date.getMonth(), 1);
-  copy.setMonth(copy.getMonth() + months);
-  return copy;
-}
-
-function slotKey(slot: Slot) {
-  return `${slot.date}_${slot.period}`;
-}
-
-function monthDays(month: Date) {
-  const year = month.getFullYear();
-  const monthIndex = month.getMonth();
-  const first = new Date(year, monthIndex, 1);
-  const last = new Date(year, monthIndex + 1, 0);
-  const days: Array<Date | null> = Array.from({ length: first.getDay() }, () => null);
-  for (let day = 1; day <= last.getDate(); day += 1) {
-    days.push(new Date(year, monthIndex, day));
-  }
-  return days;
-}
-
-function printRangeDays(month: Date) {
-  const year = month.getFullYear();
-  const monthIndex = month.getMonth();
-  let firstTuesday = new Date(year, monthIndex, 1);
-  while (firstTuesday.getDay() !== 2) {
-    firstTuesday = new Date(year, monthIndex, firstTuesday.getDate() + 1);
-  }
-  const start = new Date(firstTuesday);
-  start.setDate(firstTuesday.getDate() - firstTuesday.getDay());
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-    return date;
-  });
-}
-
-function statusLabel(status: ReservationStatus) {
-  return { pending: '仮予約', approved: '予約確定', cancelled: '取消済み' }[status];
-}
-
-function slotLabel(slot: Slot) {
-  return `${slot.date} ${PERIODS.find((period) => period.id === slot.period)?.label || slot.period}`;
-}
-
-function dateTimeLabel(value: string | null | undefined) {
-  if (!value) return '-';
-  return new Intl.DateTimeFormat('ja-JP', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(new Date(value));
-}
-
-function actorLabel(actor: ReservationActor | null | undefined) {
-  if (!actor) return '-';
-  return actor.name || actor.email || '-';
-}
-
-function App() {
+export function App() {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [apiUser, setApiUser] = useState<ApiUser | null>(null);
   const [occupiedSlots, setOccupiedSlots] = useState<OccupiedSlot[]>([]);
@@ -935,4 +874,7 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+const rootElement = document.getElementById('root');
+if (rootElement) {
+  createRoot(rootElement).render(<App />);
+}

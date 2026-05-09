@@ -3,10 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node --check src/server.js",
+    "build": "node --check src/app.js && node --check src/server.js",
     "dev": "node --env-file-if-exists=.env src/server.js",
     "start": "node --env-file-if-exists=.env src/server.js",
-    "lint": "node --check src/server.js"
+    "lint": "npm run build",
+    "test": "vitest run"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.5.0",
@@ -15,5 +16,9 @@
     "helmet": "^7.1.0",
     "jose": "^6.2.3",
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "node-mocks-http": "^1.17.2",
+    "vitest": "^4.1.5"
   }
 }
