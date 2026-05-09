@@ -152,6 +152,10 @@ function appWith({ db = new MemoryDb(), payload = userPayload() } = {}) {
   return { app, db };
 }
 
+function authHeaders() {
+  return { Authorization: 'Bearer test-token' };
+}
+
 function userPayload(overrides = {}) {
   return {
     user_id: 'user-1',
@@ -161,6 +165,15 @@ function userPayload(overrides = {}) {
   };
 }
 
+function adminPayload(overrides = {}) {
+  return userPayload({
+    user_id: 'admin-1',
+    email: 'admin@example.com',
+    name: '管理者',
+    ...overrides
+  });
+}
+
 async function allowUser(db, email = 'user@example.com', role = 'user') {
   await db.collection('allowedUsers').doc(email).set({
     email,
@@ -168,6 +181,35 @@ async function allowUser(db, email = 'user@example.com', role = 'user') {
     role,
     active: true
   });
+}
+
+async function seedReservation(db, id, overrides = {}) {
+  const slots = overrides.slots || [{ date: '2026-05-10', period: 'morning' }];
+  const reservation = {
+    slots,
+    status: 'pending',
+    groupName: 'テスト団体',
+    representative: { name: '代表者', phone: '090-0000-0000', email: 'rep@example.com' },
+    expectedAttendees: 10,
+    purpose: '会議',
+    createdBy: { uid: 'user-1', email: 'user@example.com', name: '利用者', role: 'user', isAdmin: false },
+    createdAt: null,
+    updatedAt: null,
+    ...overrides
+  };
+  await db.collection('reservations').doc(id).set(reservation);
+  if (reservation.status !== 'cancelled') {
+    for (const slot of slots) {
+      await db.collection('reservationSlots').doc(`${slot.date}_${slot.period}`).set({
+        date: slot.date,
+        period: slot.period,
+        groupName: reservation.groupName,
+        reservationId: id,
+        status: reservation.status
+      });
+    }
+  }
+  return reservation;
 }
 
 function request(app, method, url, { body, headers } = {}) {
@@ -234,7 +276,7 @@ describe('app API', () => {
     const { app } = appWith({ db });
 
     const response = await request(app, 'GET', '/api/me', {
-      headers: { Authorization: 'Bearer test-token' }
+      headers: authHeaders()
     });
     expect(response.status).toBe(200);
     expect(response.body.user).toMatchObject({
@@ -250,7 +292,7 @@ describe('app API', () => {
     const { app } = appWith({ db });
 
     const response = await request(app, 'GET', '/api/admin/users', {
-      headers: { Authorization: 'Bearer test-token' }
+      headers: authHeaders()
     });
     expect(response.status).toBe(403);
     expect(response.body.error).toBe('管理者権限が必要です。');
@@ -261,14 +303,14 @@ describe('app API', () => {
     const { app } = appWith({ db });
 
     const invalid = await request(app, 'POST', '/api/reservations', {
-      headers: { Authorization: 'Bearer test-token' },
+      headers: authHeaders(),
       body: {}
     });
     expect(invalid.status).toBe(400);
     expect(invalid.body.error).toBe('入力内容を確認してください。');
 
     const duplicate = await request(app, 'POST', '/api/reservations', {
-      headers: { Authorization: 'Bearer test-token' },
+      headers: authHeaders(),
       body: {
         slots: [
           { date: '2026-05-10', period: 'morning' },
@@ -289,7 +331,7 @@ describe('app API', () => {
     const { app } = appWith({ db });
 
     const response = await request(app, 'POST', '/api/reservations', {
-      headers: { Authorization: 'Bearer test-token' },
+      headers: authHeaders(),
       body: {
         slots: [{ date: '2026-05-10', period: 'morning' }],
         groupName: 'テスト団体',
@@ -317,7 +359,7 @@ describe('app API', () => {
     const { app } = appWith({ db });
 
     const response = await request(app, 'POST', '/api/reservations', {
-      headers: { Authorization: 'Bearer test-token' },
+      headers: authHeaders(),
       body: {
         slots: [{ date: '2026-05-10', period: 'morning' }],
         groupName: 'テスト団体',
@@ -328,5 +370,136 @@ describe('app API', () => {
     });
     expect(response.status).toBe(409);
     expect(response.body.error).toBe('予約済みのコマが含まれています。');
+  });
+
+  it('lists only the signed-in user reservations unless an admin requests all', async () => {
+    await allowUser(db);
+    await seedReservation(db, 'mine', {
+      groupName: '自分の予約',
+      createdBy: { uid: 'user-1', email: 'user@example.com' }
+    });
+    await seedReservation(db, 'other', {
+      groupName: '他人の予約',
+      slots: [{ date: '2026-05-11', period: 'afternoon' }],
+      createdBy: { uid: 'user-2', email: 'other@example.com' }
+    });
+
+    const userApp = appWith({ db }).app;
+    const mine = await request(userApp, 'GET', '/api/reservations?scope=all', {
+      headers: authHeaders()
+    });
+    expect(mine.status).toBe(200);
+    expect(mine.body.reservations).toHaveLength(1);
+    expect(mine.body.reservations[0]).toMatchObject({ id: 'mine', groupName: '自分の予約' });
+
+    const adminApp = appWith({ db, payload: adminPayload() }).app;
+    const all = await request(adminApp, 'GET', '/api/reservations?scope=all', {
+      headers: authHeaders()
+    });
+    expect(all.status).toBe(200);
+    expect(all.body.reservations).toHaveLength(2);
+  });
+
+  it('creates, updates, and deactivates allowed users as admin', async () => {
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const created = await request(app, 'POST', '/api/admin/users', {
+      headers: authHeaders(),
+      body: {
+        email: 'NewUser@Example.com',
+        name: '新規利用者',
+        role: 'user',
+        active: true
+      }
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.user).toMatchObject({
+      id: 'newuser@example.com',
+      email: 'newuser@example.com',
+      name: '新規利用者',
+      role: 'user',
+      active: true
+    });
+
+    const patched = await request(app, 'PATCH', '/api/admin/users/newuser@example.com', {
+      headers: authHeaders(),
+      body: { name: '更新済み利用者', role: 'admin' }
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.user).toMatchObject({
+      email: 'newuser@example.com',
+      name: '更新済み利用者',
+      role: 'admin',
+      active: true
+    });
+
+    const deleted = await request(app, 'DELETE', '/api/admin/users/newuser@example.com', {
+      headers: authHeaders()
+    });
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.user).toMatchObject({
+      email: 'newuser@example.com',
+      active: false
+    });
+  });
+
+  it('returns not found when admin updates a missing user', async () => {
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const response = await request(app, 'PATCH', '/api/admin/users/missing@example.com', {
+      headers: authHeaders(),
+      body: { name: 'Missing' }
+    });
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBe('利用者が見つかりません。');
+  });
+
+  it('approves a pending reservation and updates its occupied slots', async () => {
+    await seedReservation(db, 'reservation-1');
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const response = await request(app, 'PATCH', '/api/reservations/reservation-1/approve', {
+      headers: authHeaders()
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.reservation).toMatchObject({
+      id: 'reservation-1',
+      status: 'approved'
+    });
+    expect(db.collection('reservationSlots').items.get('2026-05-10_morning')).toMatchObject({
+      status: 'approved'
+    });
+  });
+
+  it('rejects approving a missing or cancelled reservation', async () => {
+    await seedReservation(db, 'cancelled-reservation', { status: 'cancelled' });
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const missing = await request(app, 'PATCH', '/api/reservations/missing/approve', {
+      headers: authHeaders()
+    });
+    expect(missing.status).toBe(404);
+    expect(missing.body.error).toBe('予約が見つかりません。');
+
+    const cancelled = await request(app, 'PATCH', '/api/reservations/cancelled-reservation/approve', {
+      headers: authHeaders()
+    });
+    expect(cancelled.status).toBe(400);
+    expect(cancelled.body.error).toBe('取消済みの予約は承認できません。');
+  });
+
+  it('cancels a reservation and deletes its occupied slots', async () => {
+    await seedReservation(db, 'reservation-1');
+    const { app } = appWith({ db, payload: adminPayload() });
+
+    const response = await request(app, 'PATCH', '/api/reservations/reservation-1/cancel', {
+      headers: authHeaders()
+    });
+    expect(response.status).toBe(200);
+    expect(response.body.reservation).toMatchObject({
+      id: 'reservation-1',
+      status: 'cancelled'
+    });
+    expect(db.collection('reservationSlots').items.has('2026-05-10_morning')).toBe(false);
   });
 });
