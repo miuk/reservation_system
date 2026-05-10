@@ -27,6 +27,26 @@ resource "google_artifact_registry_repository" "docker" {
   format        = "DOCKER"
   description   = "Docker images for the reservation system Cloud Run services."
 
+  cleanup_policy_dry_run = true
+
+  cleanup_policies {
+    id     = "delete-images"
+    action = "DELETE"
+
+    condition {
+      tag_state = "ANY"
+    }
+  }
+
+  cleanup_policies {
+    id     = "keep-recent-10"
+    action = "KEEP"
+
+    most_recent_versions {
+      keep_count = 10
+    }
+  }
+
   depends_on = [google_project_service.required]
 }
 
